@@ -10,7 +10,7 @@ import {
   ActivityType,
   MessageFlagsBitField,
 } from "discord.js";
-import { loadAlarmId, setupDailyAlarm, triggerAlarm } from "./utils/alarm.js";
+import { loadAlarmId, setupDailyAlarm, triggerAlarm, firstDayOfMonthAlarm } from "./utils/alarm.js";
 import { getSong, updateSongList } from "./utils/songlist.js";
 import { loadTriggerWords, triggerWords } from "./utils/triggerWord.js";
 import { loadCodeChannels } from "./utils/redeemCodeChannels.js";
@@ -29,6 +29,10 @@ client.on("ready", async () => {
   await loadCodeChannels();
 
   setupDailyAlarm(client, "hoyo");
+  
+  // Load alarm channel IDs and setup first day of month alarm
+  const alarmChannelIds = await loadAlarmId();
+  firstDayOfMonthAlarm(client, alarmChannelIds);
 
   client.user.setActivity("新星目録", {
     type: ActivityType.Listening,

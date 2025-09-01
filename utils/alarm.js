@@ -71,7 +71,7 @@ async function firstDayOfMonthAlarm(client, channelIds) {
     });
 
     await Promise.all(messagePromises);
-    conole.log("First day of month alarm sent to all channels.");
+    console.log("First day of month alarm sent to all channels.");
   });
 }
 
@@ -185,4 +185,4 @@ async function triggerAlarm(client, channelIds, type) {
   }
 }
 
-export { setupDailyAlarm, triggerAlarm, loadAlarmId };
+export { setupDailyAlarm, triggerAlarm, loadAlarmId, firstDayOfMonthAlarm };
