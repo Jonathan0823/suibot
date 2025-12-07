@@ -47,6 +47,13 @@ async function fetchHoyoCodes(game) {
 
 /**
  * Scrape Wuthering Waves codes from wuthering.gg
+ * HTML structure:
+ * <tr class="active">
+ *   <td class="code">WUTHERINGGIFT</td>           <!-- Column 0: Code -->
+ *   <td class="copy"><button>COPY</button></td>    <!-- Column 1: Copy button (skip) -->
+ *   <td><ul><li>50 Astrite</li>...</ul></td>       <!-- Column 2: Rewards -->
+ *   <td>12/20/2024</td>                            <!-- Column 3: Date -->
+ * </tr>
  * @returns {Promise<Array<{code: string, rewards: string}>>}
  */
 async function fetchWuwaCodes() {
@@ -67,29 +74,44 @@ async function fetchWuwaCodes() {
 
         const codes = [];
 
-        // Look for code elements - adjust selectors based on actual site structure
-        $("table tr").each((_, row) => {
-            const cells = $(row).find("td");
-            if (cells.length >= 2) {
-                const code = $(cells[0]).text().trim();
-                const rewards = $(cells[1]).text().trim();
-                if (code && code.length > 3 && !code.toLowerCase().includes("code")) {
-                    codes.push({ code, rewards });
-                }
+        // Find rows with class "active" (active codes)
+        $("tr.active").each((_, row) => {
+            // Get code from td.code
+            const code = $(row).find("td.code").text().trim();
+
+            // Get rewards from the 3rd td (index 2), which contains ul > li
+            const rewardsList = [];
+            $(row)
+                .find("td:nth-child(3) ul li")
+                .each((_, li) => {
+                    rewardsList.push($(li).text().trim());
+                });
+            const rewards = rewardsList.join(", ");
+
+            if (code && code.length > 3) {
+                codes.push({ code, rewards });
             }
         });
 
-        // Fallback: look for code patterns in the page
+        // Fallback: try old method if no active rows found
         if (codes.length === 0) {
-            const codePattern = /[A-Z0-9]{8,20}/g;
-            const text = $("body").text();
-            const matches = text.match(codePattern);
-            if (matches) {
-                const uniqueCodes = [...new Set(matches)];
-                uniqueCodes.forEach((code) => {
-                    codes.push({ code, rewards: "" });
-                });
-            }
+            $("table tr").each((_, row) => {
+                const codeCell = $(row).find("td.code");
+                if (codeCell.length > 0) {
+                    const code = codeCell.text().trim();
+                    const rewardsList = [];
+                    $(row)
+                        .find("td:nth-child(3) ul li")
+                        .each((_, li) => {
+                            rewardsList.push($(li).text().trim());
+                        });
+                    const rewards = rewardsList.join(", ");
+
+                    if (code && code.length > 3) {
+                        codes.push({ code, rewards });
+                    }
+                }
+            });
         }
 
         return codes;
