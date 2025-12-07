@@ -72,6 +72,44 @@ export const getPlayerName = (game) => GAME_CONFIG[game]?.playerName || "";
 export const getRedeemLink = (game) => GAME_CONFIG[game]?.redeemLink || null;
 
 /**
+ * Replace currency names with emojis in rewards text
+ * @param {string} text - Rewards text
+ * @param {string} game - Game type
+ */
+function replaceCurrencyWithEmoji(text, game) {
+    const config = GAME_CONFIG[game];
+    if (!config || !text) return text;
+
+    // Currency patterns for each game (case-insensitive)
+    const replacements = {
+        gi: [
+            { pattern: /primogems?/gi, emoji: config.currencyEmoji },
+            { pattern: /primogem ×/gi, emoji: config.currencyEmoji + " ×" },
+        ],
+        hsr: [
+            { pattern: /stellar jades?/gi, emoji: config.currencyEmoji },
+            { pattern: /stellar jade/gi, emoji: config.currencyEmoji },
+        ],
+        zzz: [
+            { pattern: /polychromes?/gi, emoji: config.currencyEmoji },
+            { pattern: /polychrome ×/gi, emoji: config.currencyEmoji + " ×" },
+        ],
+        wuwa: [
+            { pattern: /astrites?/gi, emoji: config.currencyEmoji },
+        ],
+    };
+
+    let result = text;
+    const gameReplacements = replacements[game] || [];
+
+    for (const { pattern, emoji } of gameReplacements) {
+        result = result.replace(pattern, emoji);
+    }
+
+    return result;
+}
+
+/**
  * Create redeem code embed
  * @param {string} game - Game type
  * @param {Array<{code: string, value?: string, rewards?: string}>} codes - Code entries
@@ -104,12 +142,14 @@ export function createRedeemEmbed(game, codes, options = {}) {
 **Redeem Codes:**
 ${codes
                 .map((c) => {
-                    const reward = c.value || c.rewards || "";
-                    return `\`${c.code.padEnd(maxCodeLength)}\` ・ **\`${reward.padEnd(
-                        maxValueLength
-                    )}\`** ${config.currencyEmoji} ${linkText(c.code)} `;
+                    const rawReward = c.value || c.rewards || "";
+                    const reward = replaceCurrencyWithEmoji(rawReward, game);
+                    const linkPart = config.redeemLink
+                        ? `→ [Link](${config.redeemLink}${c.code})`
+                        : "";
+                    return `\`${c.code}\` ${config.currencyEmoji} ${linkPart}\n  ↳ ${reward}`;
                 })
-                .join("\n")}`
+                .join("\n\n")}`
         );
 
     if (options.showAutoScraped) {
