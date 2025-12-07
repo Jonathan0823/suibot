@@ -52,3 +52,14 @@ model CodeChannel {
 
     @@unique([channelId, gameType])
   }
+
+model ScrapedCode {
+  id        String   @id @default(cuid())
+  code      String
+  game      String   // gi, hsr, zzz, wuwa
+  rewards   String?
+  status    String   @default("active") // active, expired
+  createdAt DateTime @default(now())
+  
+  @@unique([code, game])
+}
