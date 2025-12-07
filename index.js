@@ -23,7 +23,7 @@ const client = new Client({
   ],
 });
 
-client.on("ready", async () => {
+client.on("clientReady", async () => {
   await loadAlarmId();
   await loadTriggerWords();
   await loadCodeChannels();
