@@ -14,6 +14,7 @@
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
     "@prisma/client": "^6.4.1",
+    "cheerio": "^1.1.2",
     "discord.js": "^14.16.3",
     "dotenv": "^16.4.7",
     "enkanetwork.js": "^2.10.4",
