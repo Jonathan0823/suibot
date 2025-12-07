@@ -14,6 +14,7 @@ import { loadAlarmId, setupDailyAlarm, triggerAlarm } from "./utils/alarm.js";
 import { getSong, updateSongList } from "./utils/songlist.js";
 import { loadTriggerWords, triggerWords } from "./utils/triggerWord.js";
 import { loadCodeChannels } from "./utils/redeemCodeChannels.js";
+import { setupCodeScraperCron } from "./utils/autoCodeBroadcast.js";
 import { fileURLToPath, pathToFileURL } from "url";
 const client = new Client({
   intents: [
@@ -29,6 +30,7 @@ client.on("clientReady", async () => {
   await loadCodeChannels();
 
   setupDailyAlarm(client, "hoyo");
+  setupCodeScraperCron(client);
 
   client.user.setActivity("新星目録", {
     type: ActivityType.Listening,
