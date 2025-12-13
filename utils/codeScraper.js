@@ -9,9 +9,6 @@ const GAME_ENDPOINTS = {
     zzz: `${HOYO_API_BASE}?game=nap`,
 };
 
-// Wuthering Waves scraping source
-const WUWA_SOURCE = "https://wuthering.gg/codes";
-
 /**
  * Fetch codes from hoyo-codes.seria.moe API
  * @param {string} game - Game type: gi, hsr, zzz
@@ -45,15 +42,13 @@ async function fetchHoyoCodes(game) {
     }
 }
 
+// Wuthering Waves scraping source
+const WUWA_SOURCE = "https://game8.co/games/Wuthering-Waves/archives/453149";
+
 /**
- * Scrape Wuthering Waves codes from wuthering.gg
- * HTML structure:
- * <tr class="active">
- *   <td class="code">WUTHERINGGIFT</td>           <!-- Column 0: Code -->
- *   <td class="copy"><button>COPY</button></td>    <!-- Column 1: Copy button (skip) -->
- *   <td><ul><li>50 Astrite</li>...</ul></td>       <!-- Column 2: Rewards -->
- *   <td>12/20/2024</td>                            <!-- Column 3: Date -->
- * </tr>
+ * Scrape Wuthering Waves codes from game8.co
+ * Format: "- CODE - rewards, rewards, rewards"
+ * Example: "- BACKTOSCHOOL - 100 Astrite, 4 Premium Resonance Potions"
  * @returns {Promise<Array<{code: string, rewards: string}>>}
  */
 async function fetchWuwaCodes() {
@@ -74,47 +69,46 @@ async function fetchWuwaCodes() {
 
         const codes = [];
 
-        // Find rows with class "active" (active codes)
-        $("tr.active").each((_, row) => {
-            // Get code from td.code
-            const code = $(row).find("td.code").text().trim();
+        // Game8 uses list items with format: "- CODE - rewards"
+        // Look for list items containing codes
+        $("ul li, ol li").each((_, li) => {
+            const text = $(li).text().trim();
 
-            // Get rewards from the 3rd td (index 2), which contains ul > li
-            const rewardsList = [];
-            $(row)
-                .find("td:nth-child(3) ul li")
-                .each((_, li) => {
-                    rewardsList.push($(li).text().trim());
-                });
-            const rewards = rewardsList.join(", ");
+            // Match pattern: CODE - rewards (where CODE is uppercase letters/numbers)
+            const match = text.match(/^([A-Z0-9]{6,20})\s*[-–]\s*(.+)$/i);
+            if (match) {
+                const code = match[1].toUpperCase();
+                const rewards = match[2].trim();
 
-            if (code && code.length > 3) {
-                codes.push({ code, rewards });
+                // Only accept if rewards contain "Astrite" (Wuwa premium currency)
+                // This filters out false positives
+                if (code && rewards && !code.includes(" ") && /astrite/i.test(rewards)) {
+                    codes.push({ code, rewards });
+                }
             }
         });
 
-        // Fallback: try old method if no active rows found
+        // Fallback: also check for codes in paragraph text
         if (codes.length === 0) {
-            $("table tr").each((_, row) => {
-                const codeCell = $(row).find("td.code");
-                if (codeCell.length > 0) {
-                    const code = codeCell.text().trim();
-                    const rewardsList = [];
-                    $(row)
-                        .find("td:nth-child(3) ul li")
-                        .each((_, li) => {
-                            rewardsList.push($(li).text().trim());
-                        });
-                    const rewards = rewardsList.join(", ");
-
-                    if (code && code.length > 3) {
-                        codes.push({ code, rewards });
-                    }
-                }
-            });
+            const bodyText = $("body").text();
+            // Match: WORD - description pattern for codes
+            const codePattern = /\b([A-Z]{6,20})\b\s*[-–]\s*(\d+\s*Astrite[^.]*)/gi;
+            let match;
+            while ((match = codePattern.exec(bodyText)) !== null) {
+                codes.push({
+                    code: match[1].toUpperCase(),
+                    rewards: match[2].trim(),
+                });
+            }
         }
 
-        return codes;
+        // Remove duplicates
+        const uniqueCodes = codes.filter(
+            (code, index, self) =>
+                index === self.findIndex((c) => c.code === code.code)
+        );
+
+        return uniqueCodes;
     } catch (error) {
         console.error("Error fetching Wuwa codes:", error);
         return [];
