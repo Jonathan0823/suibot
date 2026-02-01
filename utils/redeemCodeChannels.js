@@ -2,7 +2,7 @@ import prisma from "../lib/prisma.js";
 
 let codeChannels = [];
 
-const allowedGameTypes = ["gi", "hsr", "zzz", "wuwa"];
+const allowedGameTypes = ["gi", "hsr", "zzz", "wuwa", "endfield"];
 
 const loadCodeChannels = async () => {
   const data = await prisma.codeChannel.findMany();
