@@ -33,7 +33,7 @@ export const GAME_CONFIG = {
   },
   endfield: {
     name: "Arknights: Endfield",
-    emoji: "<:EndminPray:1319511264564871241>",
+    emoji: "<:endmin:1467358770135957627>",
     currencyEmoji: "<:Oroberyl:1467344972851187960>",
     playerName: "Endministrator",
     redeemLink: null,
