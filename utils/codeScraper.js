@@ -44,6 +44,8 @@ async function fetchHoyoCodes(game) {
 
 // Wuthering Waves scraping source
 const WUWA_SOURCE = "https://game8.co/games/Wuthering-Waves/archives/453149";
+// Arknights: Endfield scraping source
+const ENDFIELD_SOURCE = "https://game8.co/games/Arknights-Endfield/archives/571509";
 
 /**
  * Scrape Wuthering Waves codes from game8.co
@@ -115,6 +117,108 @@ async function fetchWuwaCodes() {
     }
 }
 
+
+/**
+ * Scrape Arknights: Endfield codes from game8.co
+ * @returns {Promise<Array<{code: string, rewards: string}>>}
+ */
+async function fetchEndfieldCodes() {
+    try {
+        const response = await fetch(ENDFIELD_SOURCE, {
+            headers: {
+                "User-Agent":
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            },
+        });
+
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+
+        const html = await response.text();
+        const $ = cheerio.load(html);
+
+        const codes = [];
+
+        // Find the 'Active Codes' header
+        // User specified: <h3 class="a-header--3" id="hm_1">Active Codes in January 2026</h3>
+        // We look for any h3 containing "Active Code"
+        const header = $("h3").filter((_, el) => {
+            return $(el).text().match(/Active Code/i);
+        }).first();
+
+
+
+        if (header.length > 0) {
+            // Find the table immediately following this header
+            const table = header.nextAll("div.a-table, table").first().find("table").addBack("table").first();
+
+            if (table.length > 0) {
+                const rows = table.find("tbody tr");
+
+                rows.each((i, row) => {
+                    // Skip header row
+                    if ($(row).find("th").length > 0) return;
+
+                    const cells = $(row).find("td");
+                    if (cells.length >= 2) {
+                        const codeCell = $(cells[0]);
+                        const rewardCell = $(cells[1]);
+
+                        // Code is bold text in first cell
+                        // Code is bold text in first cell, or in an input value
+                        let code = "";
+                        const inputVal = codeCell.find("input.a-clipboard__textInput").val();
+                        if (inputVal) {
+                            code = inputVal.trim();
+                        } else {
+                            code = codeCell.find("b").text().trim();
+                            if (!code) code = codeCell.find("strong").text().trim(); // Try strong
+                            if (!code) {
+                                // Fallback: Get first non-empty text line
+                                const text = codeCell.text().trim();
+                                code = text.split(/[\n\s]/)[0];
+                            }
+                        }
+
+                        // Rewards are in divs
+                        const rewardsList = [];
+                        rewardCell.find("div.align").each((_, div) => {
+                            let text = $(div).text().trim();
+
+                            // Check for Oroberyl and apply custom emoji
+                            if (text.includes("Oroberyl")) {
+                                text = text.replace("Oroberyl", "<:Oroberyl:1467344972851187960>");
+                            }
+
+                            if (text) rewardsList.push(text);
+                        });
+
+                        const rewards = rewardsList.join(", ");
+
+
+
+                        if (code && rewards) {
+                            codes.push({ code, rewards });
+                        }
+                    }
+                });
+            }
+        }
+
+        // Remove duplicates
+        const uniqueCodes = codes.filter(
+            (code, index, self) =>
+                index === self.findIndex((c) => c.code === code.code)
+        );
+
+        return uniqueCodes;
+
+    } catch (error) {
+        console.error("Error fetching Endfield codes:", error);
+        return [];
+    }
+}
 /**
  * Get new codes that are not yet in the database
  * @param {string} game - Game type: gi, hsr, zzz, wuwa
@@ -165,6 +269,7 @@ async function getAllNewCodes() {
         hsr: [],
         zzz: [],
         wuwa: [],
+        endfield: [],
     };
 
     // Fetch from HoYo API
@@ -176,6 +281,10 @@ async function getAllNewCodes() {
     // Fetch Wuwa codes
     const wuwaCodes = await fetchWuwaCodes();
     results.wuwa = await filterNewCodes("wuwa", wuwaCodes);
+
+    // Fetch Endfield codes
+    const endfieldCodes = await fetchEndfieldCodes();
+    results.endfield = await filterNewCodes("endfield", endfieldCodes);
 
     return results;
 }
@@ -200,6 +309,7 @@ async function markCodesExpired(game, codes) {
 export {
     fetchHoyoCodes,
     fetchWuwaCodes,
+    fetchEndfieldCodes,
     filterNewCodes,
     saveCodes,
     getAllNewCodes,
