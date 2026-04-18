@@ -11,12 +11,18 @@ const loadTriggerWords = async () => {
       orderBy: { priority: "desc" },
     });
 
-    // Normalize keys on load
-    triggers = triggerWords.map((t) => ({
-      ...t,
-      key: t.key.trim().toLowerCase(),
-      aliases: (t.aliases || []).map((a) => a.trim().toLowerCase()),
-    }));
+    // Normalize keys on load (skip for regex to preserve pattern)
+    triggers = triggerWords.map((t) => {
+      const isRegex = t.matchMode === "regex";
+
+      return {
+        ...t,
+        key: isRegex ? t.key.trim() : t.key.trim().toLowerCase(),
+        aliases: isRegex
+          ? (t.aliases || []).map((a) => a.trim())
+          : (t.aliases || []).map((a) => a.trim().toLowerCase()),
+      };
+    });
 
     console.log(`Loaded ${triggers.length} trigger words`);
   } catch (err) {
@@ -27,30 +33,6 @@ const loadTriggerWords = async () => {
 
 const reloadTriggerWords = async () => {
   await loadTriggerWords();
-};
-
-// Check if trigger is on cooldown
-const isOnCooldown = (triggerId, userId) => {
-  const key = `${triggerId}:${userId}`;
-  const lastTrigger = cooldownCache.get(key);
-  
-  if (!lastTrigger) return false;
-  
-  return Date.now() - lastTrigger < trigger.cooldownSeconds * 1000;
-};
-
-// Set cooldown for trigger
-const setCooldown = (triggerId, userId) => {
-  const key = `${triggerId}:${userId}`;
-  cooldownCache.set(key, Date.now());
-  
-  // Cleanup old entries periodically
-  if (cooldownCache.size > 1000) {
-    const now = Date.now();
-    for (const [k, v] of cooldownCache.entries()) {
-      if (now - v > 60000) cooldownCache.delete(k);
-    }
-  }
 };
 
 // Match modes
@@ -119,13 +101,22 @@ const triggerWords = async (interaction) => {
   if (trigger.cooldownSeconds > 0 && userId) {
     const cooldownKey = `${trigger.id}:${userId}`;
     const lastTrigger = cooldownCache.get(cooldownKey);
-    
-    if (lastTrigger && Date.now() - lastTrigger < trigger.cooldownSeconds * 1000) {
+    const expiry = trigger.cooldownSeconds * 1000;
+
+    if (lastTrigger && Date.now() - lastTrigger < expiry) {
       return null; // Still on cooldown
     }
-    
-    // Set cooldown
-    cooldownCache.set(cooldownKey, Date.now());
+
+    // Set cooldown with expiry timestamp
+    cooldownCache.set(cooldownKey, Date.now() + expiry);
+
+    // Cleanup old entries periodically
+    if (cooldownCache.size > 1000) {
+      const now = Date.now();
+      for (const [k, v] of cooldownCache.entries()) {
+        if (v < now) cooldownCache.delete(k);
+      }
+    }
   }
 
   // Send response

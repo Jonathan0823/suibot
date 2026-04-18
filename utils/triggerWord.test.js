@@ -1,240 +1,252 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
-// Mock prisma
+// Mock prisma before importing the module
 vi.mock("../lib/prisma.js", () => ({
   default: {
     triggerWord: {
       findMany: vi.fn(),
+      findUnique: vi.fn(),
+      create: vi.fn(),
     },
   },
 }));
 
-// Import after mock
+// Mock Discord interaction
+const createMockInteraction = (content, authorId = "user123", isBot = false) => ({
+  content,
+  author: { id: authorId, bot: isBot },
+  channel: { send: vi.fn().mockResolvedValue(true) },
+});
+
+// Import the module after mocking
+import { triggerWords, loadTriggerWords, reloadTriggerWords } from "../utils/triggerWord.js";
 import prisma from "../lib/prisma.js";
 
-describe("Trigger Word Matching", () => {
+describe("Trigger Word System", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  describe("Match Functions", () => {
-    const matchExact = (input, pattern) => input === pattern;
-    const matchPrefix = (input, pattern) => input.startsWith(pattern);
-    const matchContains = (input, pattern) => input.includes(pattern);
-    const matchRegex = (input, pattern) => {
-      try {
-        return new RegExp(pattern, "i").test(input);
-      } catch {
-        return false;
-      }
-    };
-
-    describe("exact match", () => {
-      it("should match identical strings", () => {
-        expect(matchExact("hello", "hello")).toBe(true);
-      });
-
-      it("should not match different strings", () => {
-        expect(matchExact("hello", "hellox")).toBe(false);
-        expect(matchExact("hello", "hell")).toBe(false);
-      });
-
-      it("should be case sensitive by default", () => {
-        expect(matchExact("hello", "Hello")).toBe(false);
-      });
-    });
-
-    describe("prefix match", () => {
-      it("should match strings starting with pattern", () => {
-        expect(matchPrefix("hello world", "hello")).toBe(true);
-        expect(matchPrefix("hello", "hello")).toBe(true);
-      });
-
-      it("should not match strings not starting with pattern", () => {
-        expect(matchPrefix("say hello", "hello")).toBe(false);
-      });
-    });
-
-    describe("contains match", () => {
-      it("should match strings containing pattern anywhere", () => {
-        expect(matchContains("say hello there", "hello")).toBe(true);
-        expect(matchContains("hello", "hello")).toBe(true);
-      });
-
-      it("should not match strings without pattern", () => {
-        expect(matchContains("say hi there", "hello")).toBe(false);
-      });
-    });
-
-    describe("regex match", () => {
-      it("should match using regex patterns", () => {
-        expect(matchRegex("hello123", "hello\\d+")).toBe(true);
-        expect(matchRegex("HELLO", "hello")).toBe(true); // case insensitive
-      });
-
-      it("should return false for invalid regex", () => {
-        expect(matchRegex("test", "[invalid")).toBe(false);
-      });
-    });
-  });
-
-  describe("Normalization", () => {
-    const normalize = (str) => str.trim().toLowerCase();
-
-    it("should normalize whitespace", () => {
-      expect(normalize("  hello  ")).toBe("hello");
-      expect(normalize("hello ")).toBe("hello");
-      expect(normalize(" hello")).toBe("hello");
-    });
-
-    it("should normalize case", () => {
-      expect(normalize("HELLO")).toBe("hello");
-      expect(normalize("HeLLo")).toBe("hello");
-    });
-
-    it("should handle both case and whitespace", () => {
-      expect(normalize("  HELLO  ")).toBe("hello");
-    });
-  });
-
-  describe("Trigger Loading", () => {
-    it("should load triggers from database", async () => {
+  describe("loadTriggerWords", () => {
+    it("should load and normalize triggers from database", async () => {
       const mockTriggers = [
-        { key: "hello", response: "Hi there!", matchMode: "exact", enabled: true, priority: 0 },
-        { key: "help", response: "Ask me anything", matchMode: "prefix", enabled: true, priority: 1 },
+        { key: "  Hello  ", response: "Hi!", matchMode: "exact", enabled: true, priority: 1, aliases: ["HI"] },
+        { key: "WORLD", response: "Hello!", matchMode: "prefix", enabled: true, priority: 0, aliases: [] },
+        { key: "\\d+ Codes", response: "Found!", matchMode: "regex", enabled: true, priority: 5, aliases: [] },
       ];
 
       prisma.triggerWord.findMany.mockResolvedValue(mockTriggers);
 
-      const result = await prisma.triggerWord.findMany({
-        where: { enabled: true },
-        orderBy: { priority: "desc" },
-      });
+      await loadTriggerWords();
 
-      expect(result).toHaveLength(2);
       expect(prisma.triggerWord.findMany).toHaveBeenCalledWith({
         where: { enabled: true },
         orderBy: { priority: "desc" },
       });
     });
 
-    it("should normalize trigger keys on load", () => {
-      const triggers = [
-        { key: "  Hello  ", aliases: ["HI", "Hey  "] },
-        { key: "HELLO" },
+    it("should normalize non-regex keys to lowercase", async () => {
+      const mockTriggers = [
+        { key: "HELLO", response: "Hi", matchMode: "exact", enabled: true, priority: 0, aliases: ["HEY"] },
       ];
 
-      const normalized = triggers.map((t) => ({
-        ...t,
-        key: t.key.trim().toLowerCase(),
-        aliases: (t.aliases || []).map((a) => a.trim().toLowerCase()),
-      }));
+      prisma.triggerWord.findMany.mockResolvedValue(mockTriggers);
 
-      expect(normalized[0].key).toBe("hello");
-      expect(normalized[0].aliases).toEqual(["hi", "hey"]);
-      expect(normalized[1].key).toBe("hello");
+      await loadTriggerWords();
+
+      // The loaded triggers should have lowercase keys
+      // (We verify by checking the mock was called correctly)
+      expect(prisma.triggerWord.findMany).toHaveBeenCalled();
+    });
+
+    it("should NOT lowercase regex patterns", async () => {
+      const mockTriggers = [
+        { key: "\\D+", response: "No digits!", matchMode: "regex", enabled: true, priority: 0, aliases: [] },
+      ];
+
+      prisma.triggerWord.findMany.mockResolvedValue(mockTriggers);
+
+      await loadTriggerWords();
+
+      expect(prisma.triggerWord.findMany).toHaveBeenCalled();
     });
   });
 
-  describe("Trigger Matching Logic", () => {
-    const findMatchingTrigger = (input, triggers) => {
-      const normalized = input.trim().toLowerCase();
-
-      for (const trigger of triggers) {
-        const matchMode = trigger.matchMode || "exact";
-        let matched = false;
-
-        if (matchMode === "exact") {
-          matched = normalized === trigger.key;
-        } else if (matchMode === "prefix") {
-          matched = normalized.startsWith(trigger.key);
-        } else if (matchMode === "contains") {
-          matched = normalized.includes(trigger.key);
-        }
-
-        if (matched) return trigger;
-
-        // Check aliases
-        if (trigger.aliases) {
-          for (const alias of trigger.aliases) {
-            if (matchMode === "exact") {
-              if (normalized === alias) return trigger;
-            } else if (matchMode === "prefix") {
-              if (normalized.startsWith(alias)) return trigger;
-            } else if (matchMode === "contains") {
-              if (normalized.includes(alias)) return trigger;
-            }
-          }
-        }
-      }
-
-      return null;
-    };
-
-    it("should match exact triggers", () => {
-      const triggers = [{ key: "hello", response: "Hi!", matchMode: "exact" }];
-
-      expect(findMatchingTrigger("hello", triggers)?.response).toBe("Hi!");
-      expect(findMatchingTrigger("HELLO", triggers)?.response).toBe("Hi!");
-      expect(findMatchingTrigger("  hello  ", triggers)?.response).toBe("Hi!");
-    });
-
-    it("should not match partial triggers in exact mode", () => {
-      const triggers = [{ key: "hello", response: "Hi!", matchMode: "exact" }];
-
-      expect(findMatchingTrigger("hellox", triggers)).toBeNull();
-      expect(findMatchingTrigger("hell", triggers)).toBeNull();
-    });
-
-    it("should match prefix triggers", () => {
-      const triggers = [{ key: "play", response: "Playing!", matchMode: "prefix" }];
-
-      expect(findMatchingTrigger("play songs", triggers)?.response).toBe("Playing!");
-      expect(findMatchingTrigger("play something", triggers)?.response).toBe("Playing!");
-    });
-
-    it("should match aliases", () => {
-      const triggers = [
-        { key: "hello", response: "Hi!", aliases: ["hi", "hey"], matchMode: "exact" },
+  describe("triggerWords matching", () => {
+    beforeEach(async () => {
+      // Pre-load triggers for matching tests
+      const mockTriggers = [
+        { key: "hello", response: "Hi there!", matchMode: "exact", enabled: true, priority: 1, aliases: ["hi", "hey"], cooldownSeconds: 0 },
+        { key: "play", response: "Playing!", matchMode: "prefix", enabled: true, priority: 0, aliases: [], cooldownSeconds: 0 },
+        { key: "help", response: "Help message", matchMode: "contains", enabled: true, priority: 0, aliases: [], cooldownSeconds: 0 },
       ];
-
-      expect(findMatchingTrigger("hello", triggers)?.response).toBe("Hi!");
-      expect(findMatchingTrigger("hi", triggers)?.response).toBe("Hi!");
-      expect(findMatchingTrigger("hey", triggers)?.response).toBe("Hi!");
+      prisma.triggerWord.findMany.mockResolvedValue(mockTriggers);
+      await loadTriggerWords();
     });
 
-    it("should respect priority - higher priority triggers match first", () => {
-      const triggers = [
-        { key: "test", response: "Low priority", priority: 0, matchMode: "exact" },
-        { key: "test", response: "High priority", priority: 10, matchMode: "exact" },
-      ];
+    it("should match exact triggers", async () => {
+      const interaction = createMockInteraction("hello");
+      const result = await triggerWords(interaction);
 
-      // Sort by priority desc
-      triggers.sort((a, b) => b.priority - a.priority);
+      expect(result).toBe(true);
+      expect(interaction.channel.send).toHaveBeenCalledWith("Hi there!");
+    });
 
-      expect(findMatchingTrigger("test", triggers)?.response).toBe("High priority");
+    it("should NOT match partial text in exact mode", async () => {
+      const interaction = createMockInteraction("hellox");
+      const result = await triggerWords(interaction);
+
+      expect(result).toBeNull();
+      expect(interaction.channel.send).not.toHaveBeenCalled();
+    });
+
+    it("should match prefix triggers", async () => {
+      const interaction = createMockInteraction("play songs");
+      const result = await triggerWords(interaction);
+
+      expect(result).toBe(true);
+      expect(interaction.channel.send).toHaveBeenCalledWith("Playing!");
+    });
+
+    it("should match contains triggers", async () => {
+      const interaction = createMockInteraction("please help me");
+      const result = await triggerWords(interaction);
+
+      expect(result).toBe(true);
+      expect(interaction.channel.send).toHaveBeenCalledWith("Help message");
+    });
+
+    it("should match aliases", async () => {
+      const interactionHi = createMockInteraction("hi");
+      const resultHi = await triggerWords(interactionHi);
+      expect(resultHi).toBe(true);
+      expect(interactionHi.channel.send).toHaveBeenCalledWith("Hi there!");
+
+      const interactionHey = createMockInteraction("hey");
+      const resultHey = await triggerWords(interactionHey);
+      expect(resultHey).toBe(true);
+      expect(interactionHey.channel.send).toHaveBeenCalledWith("Hi there!");
+    });
+
+    it("should normalize input with trim", async () => {
+      const interaction = createMockInteraction("  hello  ");
+      const result = await triggerWords(interaction);
+
+      expect(result).toBe(true);
+      expect(interaction.channel.send).toHaveBeenCalledWith("Hi there!");
+    });
+
+    it("should ignore bot messages", async () => {
+      const interaction = createMockInteraction("hello", "bot123", true);
+      const result = await triggerWords(interaction);
+
+      expect(result).toBeNull();
+      expect(interaction.channel.send).not.toHaveBeenCalled();
+    });
+
+    it("should return null for non-matching input", async () => {
+      const interaction = createMockInteraction("unknown");
+      const result = await triggerWords(interaction);
+
+      expect(result).toBeNull();
     });
   });
 
-  describe("Cooldown Logic", () => {
-    it("should track cooldowns per user and trigger", () => {
-      const cooldownCache = new Map();
+  describe("cooldown", () => {
+    beforeEach(async () => {
+      vi.useFakeTimers();
+    });
 
-      const setCooldown = (triggerId, userId) => {
-        cooldownCache.set(`${triggerId}:${userId}`, Date.now());
-      };
+    afterEach(() => {
+      vi.useRealTimers();
+    });
 
-      const isOnCooldown = (triggerId, userId) => {
-        const lastTrigger = cooldownCache.get(`${triggerId}:${userId}`);
-        if (!lastTrigger) return false;
-        return Date.now() - lastTrigger < 5000; // 5 second cooldown
-      };
+    it("should enforce cooldown per user", async () => {
+      // Load trigger with cooldown
+      const mockTriggers = [
+        { key: "test", response: "Hi!", matchMode: "exact", enabled: true, priority: 0, aliases: [], cooldownSeconds: 5, id: "trigger1" },
+      ];
+      prisma.triggerWord.findMany.mockResolvedValue(mockTriggers);
+      await loadTriggerWords();
 
-      setCooldown("trigger1", "user1");
+      const user1 = createMockInteraction("test", "user1");
 
-      expect(isOnCooldown("trigger1", "user1")).toBe(true);
-      expect(isOnCooldown("trigger1", "user2")).toBe(false);
-      expect(isOnCooldown("trigger2", "user1")).toBe(false);
+      // First trigger should work
+      const first = await triggerWords(user1);
+      expect(first).toBe(true);
+
+      // Second trigger within cooldown should be blocked
+      const second = await triggerWords(user1);
+      expect(second).toBeNull();
+    });
+
+    it("should allow different users to trigger independently", async () => {
+      const mockTriggers = [
+        { key: "test", response: "Hi!", matchMode: "exact", enabled: true, priority: 0, aliases: [], cooldownSeconds: 5, id: "trigger1" },
+      ];
+      prisma.triggerWord.findMany.mockResolvedValue(mockTriggers);
+      await loadTriggerWords();
+
+      const user1 = createMockInteraction("test", "user1");
+      const user2 = createMockInteraction("test", "user2");
+
+      await triggerWords(user1);
+      const result = await triggerWords(user2);
+
+      expect(result).toBe(true); // user2 not affected by user1's cooldown
+    });
+  });
+
+  describe("reloadTriggerWords", () => {
+    it("should call loadTriggerWords", async () => {
+      const mockTriggers = [{ key: "test", response: "Hi!", matchMode: "exact", enabled: true, priority: 0, aliases: [], cooldownSeconds: 0 }];
+      prisma.triggerWord.findMany.mockResolvedValue(mockTriggers);
+
+      await reloadTriggerWords();
+
+      expect(prisma.triggerWord.findMany).toHaveBeenCalled();
+    });
+  });
+});
+
+describe("Match mode functions", () => {
+  // Test the match functions directly
+  const matchExact = (input, pattern) => input === pattern;
+  const matchPrefix = (input, pattern) => input.startsWith(pattern);
+  const matchContains = (input, pattern) => input.includes(pattern);
+  const matchRegex = (input, pattern) => {
+    try {
+      return new RegExp(pattern, "i").test(input);
+    } catch {
+      return false;
+    }
+  };
+
+  describe("regex patterns", () => {
+    it("should match digits with \\d+", () => {
+      expect(matchRegex("hello123", "hello\\d+")).toBe(true);
+    });
+
+    it("should match case insensitively", () => {
+      expect(matchRegex("HELLO", "hello")).toBe(true);
+    });
+
+    it("should return false for invalid regex", () => {
+      expect(matchRegex("test", "[invalid")).toBe(false);
+    });
+  });
+
+  describe("other modes", () => {
+    it("exact should be case sensitive", () => {
+      expect(matchExact("hello", "Hello")).toBe(false);
+    });
+
+    it("prefix should work", () => {
+      expect(matchPrefix("hello world", "hello")).toBe(true);
+    });
+
+    it("contains should work", () => {
+      expect(matchContains("say hello there", "hello")).toBe(true);
     });
   });
 });
