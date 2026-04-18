@@ -22,11 +22,16 @@ model User {
 }
 
 model TriggerWord {
-  id        String   @id @default(cuid())
-  key       String   @unique
-  word      String  
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id              String   @id @default(cuid())
+  key             String   @unique // primary trigger key (normalized)
+  aliases         String[] @default([]) // additional trigger keywords
+  response        String   // response to send
+  matchMode       String   @default("exact") // exact, prefix, contains, regex
+  enabled         Boolean  @default(true)
+  priority        Int      @default(0) // higher = checked first
+  cooldownSeconds Int      @default(0) // spam protection
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 }
 
 model AlarmChannel {
