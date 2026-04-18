@@ -30,7 +30,12 @@ async function aiResponder(message, args, systemInstruction, commandName) {
   const guildId = message.guildId;
 
   // Use scoped memory key: guildId + channelId + userId + commandName
-  const memoryKey = createMemoryKey({ guildId, channelId, userId, commandName });
+  const memoryKey = createMemoryKey({
+    guildId,
+    channelId,
+    userId,
+    commandName,
+  });
 
   try {
     const isNotEmpty = args.length > 0;
@@ -79,7 +84,10 @@ async function aiResponder(message, args, systemInstruction, commandName) {
       const persisted = fileStorage.get(memoryKey);
       if (persisted) {
         recentMemory.set(memoryKey, persisted.recent || []);
-        summaryMemory.set(memoryKey, persisted.summary || { turns: [], summary: "" });
+        summaryMemory.set(
+          memoryKey,
+          persisted.summary || { turns: [], summary: "" },
+        );
       }
     }
 
@@ -97,7 +105,7 @@ async function aiResponder(message, args, systemInstruction, commandName) {
     });
 
     const result = await ai.models.generateContent({
-      model: "gemini-2.5-flash-lite-0827",
+      model: "gemini-2.5-flash-lite",
       contents,
       config: {
         ...promptConfig,
@@ -148,3 +156,4 @@ async function aiResponder(message, args, systemInstruction, commandName) {
 }
 
 export default aiResponder;
+
