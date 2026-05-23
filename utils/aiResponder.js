@@ -18,9 +18,6 @@ const promptBuilder = createPromptBuilder();
 const memoryManager = createMemoryManager({ ttlHours: 24 });
 const fileStorage = createFileStorage();
 
-// Key for storing session in file storage
-const SESSION_STORAGE_KEY = "sessions";
-
 async function aiResponder(message, args, systemInstruction, commandName) {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
@@ -156,4 +153,3 @@ async function aiResponder(message, args, systemInstruction, commandName) {
 }
 
 export default aiResponder;
-
