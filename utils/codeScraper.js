@@ -48,6 +48,103 @@ const WUWA_SOURCE = "https://game8.co/games/Wuthering-Waves/archives/453149";
 const ENDFIELD_SOURCE =
   "https://game8.co/games/Arknights-Endfield/archives/571509";
 
+const SCRAPED_CODE_GAMES = ["gi", "hsr", "zzz", "wuwa", "endfield"];
+const MAX_CODES_PER_GAME = 200;
+
+const scrapedCodeCache = new Map();
+let scrapedCodeCacheLoaded = false;
+
+function createGameCache() {
+  return { set: new Set(), order: [] };
+}
+
+function getGameCache(game) {
+  if (!scrapedCodeCache.has(game)) {
+    scrapedCodeCache.set(game, createGameCache());
+  }
+
+  return scrapedCodeCache.get(game);
+}
+
+function addCodeToCache(game, code) {
+  const gameCache = getGameCache(game);
+  if (gameCache.set.has(code)) return;
+
+  gameCache.set.add(code);
+  gameCache.order.push(code);
+
+  while (gameCache.order.length > MAX_CODES_PER_GAME) {
+    const oldest = gameCache.order.shift();
+    if (oldest) gameCache.set.delete(oldest);
+  }
+}
+
+function removeCodeFromCache(game, code) {
+  const gameCache = scrapedCodeCache.get(game);
+  if (!gameCache || !gameCache.set.has(code)) return;
+
+  gameCache.set.delete(code);
+  gameCache.order = gameCache.order.filter((entry) => entry !== code);
+}
+
+function getCachedCodesForGame(game) {
+  const gameCache = scrapedCodeCache.get(game);
+  return gameCache ? [...gameCache.order] : [];
+}
+
+async function ensureScrapedCodeCache() {
+  if (scrapedCodeCacheLoaded) return scrapedCodeCache;
+
+  for (const game of SCRAPED_CODE_GAMES) {
+    scrapedCodeCache.set(game, createGameCache());
+  }
+
+  const activeCodes = await prisma.scrapedCode.findMany({
+    where: { status: "active" },
+    select: { code: true, game: true },
+    orderBy: { createdAt: "asc" },
+  });
+
+  for (const { game, code } of activeCodes) {
+    addCodeToCache(game, code);
+  }
+
+  scrapedCodeCacheLoaded = true;
+  return scrapedCodeCache;
+}
+
+async function revalidateCacheMisses(game, codes) {
+  if (codes.length === 0) {
+    return [];
+  }
+
+  const cachedSet = getGameCache(game).set;
+  const cacheMisses = codes.filter((code) => !cachedSet.has(code.code));
+
+  if (cacheMisses.length === 0) {
+    return codes;
+  }
+
+  const existingCodes = await prisma.scrapedCode.findMany({
+    where: {
+      game,
+      status: "active",
+      code: { in: cacheMisses.map((code) => code.code) },
+    },
+    select: { code: true },
+  });
+
+  const existingSet = new Set(existingCodes.map((entry) => entry.code));
+
+  for (const { code } of existingCodes) {
+    addCodeToCache(game, code);
+  }
+
+  return codes.filter(
+    (code) => !cachedSet.has(code.code) && !existingSet.has(code.code),
+  );
+}
+
 /**
  * Scrape Wuthering Waves codes from game8.co
  * Format: "- CODE - rewards, rewards, rewards"
@@ -231,18 +328,10 @@ async function fetchEndfieldCodes() {
  * @param {Array<{code: string, rewards: string}>} codes - Fetched codes
  * @returns {Promise<Array<{code: string, rewards: string}>>}
  */
-async function filterNewCodes(game, codes) {
+async function filterNewCodes(game, codes, existingCodesByGame = new Map()) {
   if (codes.length === 0) return [];
 
-  const existingCodes = await prisma.scrapedCode.findMany({
-    where: {
-      game,
-      code: { in: codes.map((c) => c.code) },
-    },
-    select: { code: true },
-  });
-
-  const existingSet = new Set(existingCodes.map((c) => c.code));
+  const existingSet = existingCodesByGame.get(game) || new Set();
   return codes.filter((c) => !existingSet.has(c.code));
 }
 
@@ -263,6 +352,10 @@ async function saveCodes(game, codes) {
     })),
     skipDuplicates: true,
   });
+
+  for (const { code } of codes) {
+    addCodeToCache(game, code);
+  }
 }
 
 /**
@@ -270,6 +363,8 @@ async function saveCodes(game, codes) {
  * @returns {Promise<{gi: Array, hsr: Array, zzz: Array, wuwa: Array}>}
  */
 async function getAllNewCodes() {
+  await ensureScrapedCodeCache();
+
   const results = {
     gi: [],
     hsr: [],
@@ -278,19 +373,27 @@ async function getAllNewCodes() {
     endfield: [],
   };
 
-  // Fetch from HoYo API
-  for (const game of ["gi", "hsr", "zzz"]) {
-    const codes = await fetchHoyoCodes(game);
-    results[game] = await filterNewCodes(game, codes);
+  const fetchedCodes = {
+    gi: await fetchHoyoCodes("gi"),
+    hsr: await fetchHoyoCodes("hsr"),
+    zzz: await fetchHoyoCodes("zzz"),
+    wuwa: await fetchWuwaCodes(),
+    endfield: await fetchEndfieldCodes(),
+  };
+
+  const existingCodesByGame = new Map(
+    SCRAPED_CODE_GAMES.map((game) => [game, getGameCache(game).set]),
+  );
+
+  for (const game of Object.keys(fetchedCodes)) {
+    const cachedFiltered = await filterNewCodes(
+      game,
+      fetchedCodes[game],
+      existingCodesByGame,
+    );
+
+    results[game] = await revalidateCacheMisses(game, cachedFiltered);
   }
-
-  // Fetch Wuwa codes
-  const wuwaCodes = await fetchWuwaCodes();
-  results.wuwa = await filterNewCodes("wuwa", wuwaCodes);
-
-  // Fetch Endfield codes
-  const endfieldCodes = await fetchEndfieldCodes();
-  results.endfield = await filterNewCodes("endfield", endfieldCodes);
 
   return results;
 }
@@ -310,6 +413,10 @@ async function markCodesExpired(game, codes) {
     },
     data: { status: "expired" },
   });
+
+  for (const code of codes) {
+    removeCodeFromCache(game, code);
+  }
 }
 
 export {
@@ -317,6 +424,11 @@ export {
   fetchWuwaCodes,
   fetchEndfieldCodes,
   filterNewCodes,
+  ensureScrapedCodeCache,
+  revalidateCacheMisses,
+  addCodeToCache,
+  removeCodeFromCache,
+  getCachedCodesForGame,
   saveCodes,
   getAllNewCodes,
   markCodesExpired,

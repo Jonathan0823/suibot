@@ -3,6 +3,9 @@ import { getCodeChannels } from "../utils/redeemCodeChannels.js";
 import { getAllNewCodes, saveCodes } from "../utils/codeScraper.js";
 import { createRedeemEmbed } from "../helper/redeemEmbed.js";
 
+let isCheckingCodes = false;
+let scraperJob = null;
+
 /**
  * Broadcast new codes to all registered channels
  * @param {import('discord.js').Client} client - Discord client
@@ -42,6 +45,12 @@ async function broadcastCodes(client, game, codes) {
  * @param {import('discord.js').Client} client - Discord client
  */
 async function checkAndBroadcast(client) {
+  if (isCheckingCodes) {
+    console.log("[CodeScraper] Skipping overlapping check");
+    return;
+  }
+
+  isCheckingCodes = true;
   console.log("[CodeScraper] Checking for new codes...");
 
   try {
@@ -62,6 +71,8 @@ async function checkAndBroadcast(client) {
     console.log("[CodeScraper] Check complete");
   } catch (error) {
     console.error("[CodeScraper] Error during check:", error);
+  } finally {
+    isCheckingCodes = false;
   }
 }
 
@@ -70,8 +81,12 @@ async function checkAndBroadcast(client) {
  * @param {import('discord.js').Client} client - Discord client
  */
 function setupCodeScraperCron(client) {
+  if (scraperJob) {
+    scraperJob.stop();
+  }
+
   // Run every 10 minutes
-  cron.schedule(
+  scraperJob = cron.schedule(
     "*/10 * * * *",
     async () => {
       await checkAndBroadcast(client);

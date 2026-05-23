@@ -3,9 +3,7 @@
  * Stores user facts, preferences, and long-term context in the database.
  */
 
-import { PrismaClient } from "@prisma/client";
-
-const prisma = new PrismaClient();
+import prisma from "../../lib/prisma.js";
 
 /**
  * Create a persistent memory store using Prisma
