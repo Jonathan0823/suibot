@@ -84,9 +84,37 @@ const findMatchingTrigger = (normalizedInput) => {
   return null;
 };
 
+const shouldSkipInteraction = (interaction) => {
+  return !interaction.content || interaction.author?.bot;
+};
+
+const applyCooldown = (trigger, userId) => {
+  if (trigger.cooldownSeconds <= 0 || !userId) return false;
+
+  const cooldownKey = `${trigger.id}:${userId}`;
+  const lastTrigger = cooldownCache.get(cooldownKey);
+  const expiry = trigger.cooldownSeconds * 1000;
+
+  if (lastTrigger && Date.now() - lastTrigger < expiry) {
+    return true; // Still on cooldown
+  }
+
+  // Set cooldown with expiry timestamp
+  cooldownCache.set(cooldownKey, Date.now() + expiry);
+
+  // Cleanup old entries periodically
+  if (cooldownCache.size > 1000) {
+    const now = Date.now();
+    for (const [k, v] of cooldownCache.entries()) {
+      if (v < now) cooldownCache.delete(k);
+    }
+  }
+
+  return false; // Not on cooldown
+};
+
 const triggerWords = async (interaction) => {
-  // Skip if no content or bot message
-  if (!interaction.content || interaction.author?.bot) return null;
+  if (shouldSkipInteraction(interaction)) return null;
 
   // Normalize input
   const normalizedInput = interaction.content.trim().toLowerCase();
@@ -98,25 +126,8 @@ const triggerWords = async (interaction) => {
 
   // Check cooldown (if configured)
   const userId = interaction.author?.id;
-  if (trigger.cooldownSeconds > 0 && userId) {
-    const cooldownKey = `${trigger.id}:${userId}`;
-    const lastTrigger = cooldownCache.get(cooldownKey);
-    const expiry = trigger.cooldownSeconds * 1000;
-
-    if (lastTrigger && Date.now() - lastTrigger < expiry) {
-      return null; // Still on cooldown
-    }
-
-    // Set cooldown with expiry timestamp
-    cooldownCache.set(cooldownKey, Date.now() + expiry);
-
-    // Cleanup old entries periodically
-    if (cooldownCache.size > 1000) {
-      const now = Date.now();
-      for (const [k, v] of cooldownCache.entries()) {
-        if (v < now) cooldownCache.delete(k);
-      }
-    }
+  if (applyCooldown(trigger, userId)) {
+    return null;
   }
 
   // Send response
