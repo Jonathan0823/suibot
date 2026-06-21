@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "test": "vitest",
+    "coverage": "vitest run --coverage",
     "start": "node index.js"
   },
   "keywords": [],
@@ -22,6 +23,7 @@
     "node-cron": "^3.0.3"
   },
   "devDependencies": {
+    "@vitest/coverage-v8": "^4.0.18",
     "prisma": "^6.4.1",
     "vitest": "^4.0.18"
   }
