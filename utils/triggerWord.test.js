@@ -32,7 +32,7 @@ describe("Trigger Word System", () => {
       const mockTriggers = [
         { key: "  Hello  ", response: "Hi!", matchMode: "exact", enabled: true, priority: 1, aliases: ["HI"] },
         { key: "WORLD", response: "Hello!", matchMode: "prefix", enabled: true, priority: 0, aliases: [] },
-        { key: "\\d+ Codes", response: "Found!", matchMode: "regex", enabled: true, priority: 5, aliases: [] },
+        { key: String.raw`\d+ Codes`, response: "Found!", matchMode: "regex", enabled: true, priority: 5, aliases: [] },
       ];
 
       prisma.triggerWord.findMany.mockResolvedValue(mockTriggers);
@@ -61,7 +61,7 @@ describe("Trigger Word System", () => {
 
     it("should NOT lowercase regex patterns", async () => {
       const mockTriggers = [
-        { key: "\\D+", response: "No digits!", matchMode: "regex", enabled: true, priority: 0, aliases: [] },
+        { key: String.raw`\D+`, response: "No digits!", matchMode: "regex", enabled: true, priority: 0, aliases: [] },
       ];
 
       prisma.triggerWord.findMany.mockResolvedValue(mockTriggers);
@@ -223,8 +223,8 @@ describe("Match mode functions", () => {
   };
 
   describe("regex patterns", () => {
-    it("should match digits with \\d+", () => {
-      expect(matchRegex("hello123", "hello\\d+")).toBe(true);
+    it("should match digits with " + String.raw`\d+`, () => {
+      expect(matchRegex("hello123", String.raw`hello\d+`)).toBe(true);
     });
 
     it("should match case insensitively", () => {

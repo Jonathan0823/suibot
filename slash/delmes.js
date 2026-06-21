@@ -41,8 +41,8 @@ export default {
       let hasMore = true;
 
       while (hasMore) {
-        const fetchAmount = amount === "all" ? 100 : parseInt(amount, 10);
-        if (isNaN(fetchAmount) || fetchAmount <= 0) {
+        const fetchAmount = amount === "all" ? 100 : Number.parseInt(amount, 10);
+        if (Number.isNaN(fetchAmount) || fetchAmount <= 0) {
           return interaction.editReply("Invalid amount specified.");
         }
 
@@ -54,7 +54,6 @@ export default {
         );
 
         if (filteredMessages.size === 0) {
-          hasMore = false;
           break;
         }
 

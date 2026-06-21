@@ -77,7 +77,7 @@ export default {
 
       if (channelId.toLowerCase() === "c") {
         await interaction.editReply("Command cancelled.");
-        collectedChannel.first().delete;
+        collectedChannel.first().delete();
         return;
       }
 
@@ -88,7 +88,7 @@ export default {
       ArrayChannelId.forEach(async (channelId) => {
         const targetChannel =
           await interaction.client.channels.fetch(channelId);
-        if (!targetChannel || !targetChannel.isTextBased()) {
+        if (!targetChannel?.isTextBased()) {
           await interaction.editReply(
             "Error: The provided channel ID is invalid.",
           );

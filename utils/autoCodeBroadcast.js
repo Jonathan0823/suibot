@@ -24,7 +24,7 @@ async function broadcastCodes(client, game, codes) {
   for (const channelId of channels) {
     try {
       const channel = await client.channels.fetch(channelId);
-      if (channel && channel.isTextBased()) {
+      if (channel?.isTextBased()) {
         await channel.send({ embeds: [embed] });
 
         // Send individual codes for easy copy-paste

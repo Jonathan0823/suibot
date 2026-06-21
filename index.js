@@ -1,7 +1,7 @@
 import "dotenv/config";
 import "./server.js";
-import fs from "fs";
-import path from "path";
+import fs from "node:fs";
+import path from "node:path";
 import {
   Client,
   GatewayIntentBits,
@@ -15,7 +15,7 @@ import { getSong, updateSongList } from "./utils/songlist.js";
 import { loadTriggerWords, triggerWords } from "./utils/triggerWord.js";
 import { loadCodeChannels } from "./utils/redeemCodeChannels.js";
 import { setupCodeScraperCron } from "./utils/autoCodeBroadcast.js";
-import { fileURLToPath, pathToFileURL } from "url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -52,7 +52,6 @@ client.on("clientReady", async () => {
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const commands = [];
 const commandMap = new Map();
 const commandsPath = path.join(__dirname, "command");
 const commandFiles = fs
@@ -75,7 +74,6 @@ for (const file of commandFiles) {
   const fullPath = path.join(commandsPath, file);
   const module = await import(pathToFileURL(fullPath).href);
   const command = module.default;
-  commands.push(command);
   commandMap.set(command.data.name, command);
 }
 
@@ -104,19 +102,17 @@ const rest = new REST({ version: "10" }).setToken(
   process.env.DISCORD_BOT_TOKEN,
 );
 
-(async () => {
-  try {
-    console.log("Started refreshing application (/) commands.");
+try {
+  console.log("Started refreshing application (/) commands.");
 
-    await rest.put(Routes.applicationCommands(process.env.DISCORD_APP_ID), {
-      body: slashCommands,
-    });
+  await rest.put(Routes.applicationCommands(process.env.DISCORD_APP_ID), {
+    body: slashCommands,
+  });
 
-    console.log("Successfully reloaded application (/) commands.");
-  } catch (error) {
-    console.error(error);
-  }
-})();
+  console.log("Successfully reloaded application (/) commands.");
+} catch (error) {
+  console.error(error);
+}
 
 const handleMessageCommand = async (interaction) => {
   const handled = await triggerWords(interaction);

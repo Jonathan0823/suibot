@@ -81,7 +81,7 @@ function addCodeToCache(game, code) {
 
 function removeCodeFromCache(game, code) {
   const gameCache = scrapedCodeCache.get(game);
-  if (!gameCache || !gameCache.set.has(code)) return;
+  if (!gameCache?.set.has(code)) return;
 
   gameCache.set.delete(code);
   gameCache.order = gameCache.order.filter((entry) => entry !== code);
@@ -175,7 +175,8 @@ async function fetchWuwaCodes() {
       const text = $(li).text().trim();
 
       // Match pattern: CODE - rewards (where CODE is uppercase letters/numbers)
-      const match = text.match(/^([A-Z0-9]{6,20})\s*[-–]\s*(.+)$/i);
+      const re = /^([A-Z0-9]{6,20})\s*[-–]\s*(.+)$/i;
+      const match = re.exec(text);
       if (match) {
         const code = match[1].toUpperCase();
         const rewards = match[2].trim();
@@ -247,9 +248,8 @@ async function fetchEndfieldCodes() {
     // We look for any h3 containing "Active Code"
     const header = $("h3")
       .filter((_, el) => {
-        return $(el)
-          .text()
-          .match(/Active Code/i);
+        return /Active Code/i.exec($(el)
+          .text());
       })
       .first();
 
@@ -288,7 +288,7 @@ async function fetchEndfieldCodes() {
               if (!code) {
                 // Fallback: Get first non-empty text line
                 const text = codeCell.text().trim();
-                code = text.split(/[\n\s]/)[0];
+                code = text.split(/\s/)[0];
               }
             }
 

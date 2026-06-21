@@ -2,7 +2,7 @@ import prisma from "../lib/prisma.js";
 
 let codeChannels = [];
 
-const allowedGameTypes = ["gi", "hsr", "zzz", "wuwa", "endfield"];
+const allowedGameTypes = new Set(["gi", "hsr", "zzz", "wuwa", "endfield"]);
 
 const loadCodeChannels = async () => {
   const data = await prisma.codeChannel.findMany();
@@ -18,7 +18,7 @@ const getCodeChannels = (gameType) => {
 };
 
 const addCodeChannel = async (gameType, channelId) => {
-  if (!allowedGameTypes.includes(gameType)) {
+  if (!allowedGameTypes.has(gameType)) {
     throw new Error("Invalid game type.");
   }
 

@@ -46,7 +46,7 @@ export default {
           try {
             const targetChannel =
               await message.client.channels.fetch(channelId);
-            if (targetChannel && targetChannel.isTextBased()) {
+            if (targetChannel?.isTextBased()) {
               await targetChannel.send({ embeds: [embed] });
 
               for (const { code } of codes) {

@@ -1,16 +1,12 @@
-const getUserName = (message) => {
-  const user =
-    message.author.username === "lynz727wysi"
-      ? "Eguin"
-      : message.author.username === "nothing.25"
-        ? "Nigga"
-        : message.author.username === "vel740"
-          ? "Revel"
-          : message.author.username === "zerojuice"
-            ? "Eric"
-            : message.author.globalName;
+const USER_NAME_MAP = {
+  "lynz727wysi": "Eguin",
+  "nothing.25": "Nigga",
+  "vel740": "Revel",
+  "zerojuice": "Eric",
+};
 
-  return user;
+const getUserName = (message) => {
+  return USER_NAME_MAP[message.author.username] || message.author.globalName;
 };
 
 export default getUserName;

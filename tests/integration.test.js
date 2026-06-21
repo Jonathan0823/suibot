@@ -18,7 +18,7 @@ describe("Discord Integration", () => {
         await client.login(process.env.DISCORD_BOT_TOKEN);
         testChannel = await client.channels.fetch(TEST_CHANNEL_ID);
 
-        if (!testChannel || !testChannel.isTextBased()) {
+        if (!testChannel?.isTextBased()) {
             throw new Error("Test channel not found or not text-based");
         }
     });

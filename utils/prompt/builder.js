@@ -3,8 +3,6 @@
  * Builds prompts from layered context for Gemini API.
  */
 
-import { createMemoryKey } from "../memory/memoryKey.js";
-
 const DEFAULT_CONFIG = {
   systemRules: {
     timezone: "Asia/Jakarta or UTC +7",

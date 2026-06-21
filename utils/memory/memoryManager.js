@@ -3,7 +3,7 @@
  * Manages memory lifecycle: TTL, auto-save, cleanup, and rules.
  */
 
-import { createMemoryKey, createShortKey } from "./memoryKey.js";
+// ponytail: imports unused — left in case memory archiving code needs them later
 
 const DEFAULT_TTL_HOURS = 24;
 
@@ -97,7 +97,7 @@ export function createMemoryManager({ ttlHours = DEFAULT_TTL_HOURS } = {}) {
 
       // Simple pattern matching for common facts
       // Name mentions
-      const nameMatch = userMessage.match(/my name is (\w+)/i);
+      const nameMatch = /my name is (\w+)/i.exec(userMessage);
       if (nameMatch) {
         facts.push({ key: "name", value: nameMatch[1] });
       }
