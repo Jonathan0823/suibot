@@ -118,74 +118,81 @@ const rest = new REST({ version: "10" }).setToken(
   }
 })();
 
-const executeCommand = async (interaction, isSlash = true) => {
-  try {
-    // For message commands
-    if (!isSlash) {
-      const handled = await triggerWords(interaction);
-      if (handled) {
+const handleMessageCommand = async (interaction) => {
+  const handled = await triggerWords(interaction);
+  if (handled) {
+    return true;
+  }
+
+  if (
+    !interaction.content ||
+    interaction.author.bot ||
+    !interaction.content.startsWith("?")
+  ) {
+    return false;
+  }
+
+  const args = interaction.content.slice(1).trim().split(/\s+/);
+  const commandName = args.shift().toLowerCase();
+
+  const command = commandMap.get(commandName);
+  if (command) {
+    try {
+      if (interaction.replied || interaction.deferred) {
+        console.log("Command already processed");
         return true;
       }
 
-      if (
-        !interaction.content ||
-        interaction.author.bot ||
-        !interaction.content.startsWith("?")
-      ) {
-        return false;
+      await command.execute(interaction, args);
+      return true;
+    } catch (error) {
+      console.error(`Error in message command ${commandName}:`, error);
+
+      if (!interaction.replied && !interaction.deferred) {
+        await interaction.reply(
+          "There was an error executing that command!",
+        );
       }
+      return true;
+    }
+  }
+  return false;
+};
 
-      const args = interaction.content.slice(1).trim().split(/\s+/);
-      const commandName = args.shift().toLowerCase();
+const handleSlashCommand = async (interaction) => {
+  if (!interaction.isCommand()) return false;
 
-      const command = commandMap.get(commandName);
-      if (command) {
-        try {
-          if (interaction.replied || interaction.deferred) {
-            console.log("Command already processed");
-            return true;
-          }
+  const command = slashCommandMap.get(interaction.commandName);
+  if (command) {
+    try {
+      await command.execute(interaction);
+      return true;
+    } catch (error) {
+      console.error(
+        `Error in slash command ${interaction.commandName}:`,
+        error,
+      );
 
-          await command.execute(interaction, args);
-          return true;
-        } catch (error) {
-          console.error(`Error in message command ${commandName}:`, error);
-
-          if (!interaction.replied && !interaction.deferred) {
-            await interaction.reply(
-              "There was an error executing that command!",
-            );
-          }
-          return true;
-        }
+      if (!interaction.replied && !interaction.deferred) {
+        await interaction.reply({
+          content: "There was an error executing this command!",
+          flags: MessageFlagsBitField.Flags.Ephemeral,
+        });
       }
-      return false;
+      return true;
+    }
+  }
+  return false;
+};
+
+const executeCommand = async (interaction, isSlash = true) => {
+  try {
+    if (!isSlash) {
+      return await handleMessageCommand(interaction);
     }
 
     if (isSlash) {
-      if (!interaction.isCommand()) return false;
-
-      const command = slashCommandMap.get(interaction.commandName);
-      if (command) {
-        try {
-          await command.execute(interaction);
-          return true;
-        } catch (error) {
-          console.error(
-            `Error in slash command ${interaction.commandName}:`,
-            error,
-          );
-
-          if (!interaction.replied && !interaction.deferred) {
-            await interaction.reply({
-              content: "There was an error executing this command!",
-              flags: MessageFlagsBitField.Flags.Ephemeral,
-            });
-          }
-          return true;
-        }
-      }
-      return false;
+      return await handleSlashCommand(interaction);
     }
 
     return false;
