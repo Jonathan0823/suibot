@@ -10,11 +10,7 @@ import { createPromptBuilder } from "./prompt/builder.js";
 import { createMemoryManager } from "./memory/memoryManager.js";
 import { createFileStorage } from "./memory/storage.js";
 import { createAiProviderService } from "./ai/providers.js";
-import {
-  createRequestId,
-  logAiEvent,
-  notifyAiFailure,
-} from "./ai/observability.js";
+import { createRequestId, logAiEvent, notifyAiFailure } from "./ai/observability.js";
 
 // Initialize memory layers
 const recentMemory = createRecentMemory(10);
@@ -41,9 +37,7 @@ async function aiResponder(message, args, systemInstruction, commandName) {
 
   try {
     const isNotEmpty = args.length > 0;
-    const prompt = isNotEmpty
-      ? args.join(" ")
-      : `Halo, ${titleCase(commandName)}!`;
+    const prompt = isNotEmpty ? args.join(" ") : `Halo, ${titleCase(commandName)}!`;
 
     const isReset = prompt.toLowerCase() === "reset";
 
@@ -86,10 +80,7 @@ async function aiResponder(message, args, systemInstruction, commandName) {
       const persisted = fileStorage.get(memoryKey);
       if (persisted) {
         recentMemory.set(memoryKey, persisted.recent || []);
-        summaryMemory.set(
-          memoryKey,
-          persisted.summary || { turns: [], summary: "" },
-        );
+        summaryMemory.set(memoryKey, persisted.summary || { turns: [], summary: "" });
       }
     }
 
@@ -111,11 +102,12 @@ async function aiResponder(message, args, systemInstruction, commandName) {
       commandName,
       contents,
       systemInstruction: promptConfig.systemInstruction,
-      notifyFailure: (details) => notifyAiFailure({
-        client: message.client,
-        commandName,
-        ...details,
-      }),
+      notifyFailure: (details) =>
+        notifyAiFailure({
+          client: message.client,
+          commandName,
+          ...details,
+        }),
     });
 
     const responseParts = splitMessage(aiResponse);
@@ -157,9 +149,7 @@ async function aiResponder(message, args, systemInstruction, commandName) {
       errorType: error?.name || "unknown",
       attempts: error?.attempts?.length || 0,
     });
-    await message.channel.send(
-      "Sorry, something went wrong with the AI generation.",
-    );
+    await message.channel.send("Sorry, something went wrong with the AI generation.");
   }
 }
 

@@ -1,19 +1,8 @@
-import {
-  ChannelType,
-  MessageFlagsBitField,
-  SlashCommandBuilder,
-} from "discord.js";
+import { ChannelType, MessageFlagsBitField, SlashCommandBuilder } from "discord.js";
 import prisma from "../lib/prisma.js";
-import {
-  clearProviderCredentialCache,
-  loadAiConfig,
-  PROVIDER_TYPES,
-} from "../utils/ai/config.js";
+import { clearProviderCredentialCache, loadAiConfig, PROVIDER_TYPES } from "../utils/ai/config.js";
 import { encryptApiKey } from "../utils/ai/crypto.js";
-import {
-  AiProviderError,
-  createAiProviderService,
-} from "../utils/ai/providers.js";
+import { AiProviderError, createAiProviderService } from "../utils/ai/providers.js";
 import { logAiEvent } from "../utils/ai/observability.js";
 
 const EPHEMERAL = MessageFlagsBitField.Flags.Ephemeral;
@@ -27,7 +16,9 @@ export function isAuthorized(interaction) {
 }
 
 function safeText(value) {
-  return String(value || "").replace(/[\r\n`]/g, "").slice(0, 120);
+  return String(value || "")
+    .replace(/[\r\n`]/g, "")
+    .slice(0, 120);
 }
 
 function providerTypeOption(option) {
@@ -42,24 +33,15 @@ function providerTypeOption(option) {
 }
 
 function nameOption(option, required = true) {
-  return option
-    .setName("name")
-    .setDescription("Provider name")
-    .setRequired(required);
+  return option.setName("name").setDescription("Provider name").setRequired(required);
 }
 
 function modelOption(option, required = true) {
-  return option
-    .setName("model")
-    .setDescription("Model identifier")
-    .setRequired(required);
+  return option.setName("model").setDescription("Model identifier").setRequired(required);
 }
 
 function baseUrlOption(option, required = false) {
-  return option
-    .setName("base-url")
-    .setDescription("Provider API base URL")
-    .setRequired(required);
+  return option.setName("base-url").setDescription("Provider API base URL").setRequired(required);
 }
 
 function priorityOption(option) {
@@ -181,11 +163,12 @@ async function handleList(interaction) {
   if (providers.length === 0) return reply(interaction, "No AI providers are configured.");
 
   const lines = providers.map((provider) => {
-    const credential = provider.type === PROVIDER_TYPES.GEMINI
-      ? "API_KEY env"
-      : provider.apiKeyCiphertext
-        ? "encrypted key"
-        : "missing key";
+    const credential =
+      provider.type === PROVIDER_TYPES.GEMINI
+        ? "API_KEY env"
+        : provider.apiKeyCiphertext
+          ? "encrypted key"
+          : "missing key";
     return `${provider.priority}. ${safeText(provider.name)} | ${safeText(provider.type)} | ${safeText(provider.model)} | ${provider.enabled ? "enabled" : "disabled"} | ${credential}`;
   });
   await reply(interaction, lines.join("\n"));
@@ -254,9 +237,7 @@ export default {
         .addStringOption((option) => nameOption(option)),
     )
     .addSubcommand((subcommand) =>
-      subcommand
-        .setName("list")
-        .setDescription("List providers without exposing credentials"),
+      subcommand.setName("list").setDescription("List providers without exposing credentials"),
     )
     .addSubcommand((subcommand) =>
       subcommand

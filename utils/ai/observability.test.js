@@ -1,9 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  logAiEvent,
-  notifyAiFailure,
-  resetFailureAlertCooldown,
-} from "./observability.js";
+import { logAiEvent, notifyAiFailure, resetFailureAlertCooldown } from "./observability.js";
 
 afterEach(() => {
   resetFailureAlertCooldown();

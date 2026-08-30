@@ -4,7 +4,9 @@ const ALERT_COOLDOWN_MS = 5 * 60 * 1000;
 let lastFailureAlertAt = 0;
 
 function safeLabel(value, fallback = "unknown") {
-  return String(value || fallback).replace(/[\r\n`]/g, "").slice(0, 120);
+  return String(value || fallback)
+    .replace(/[\r\n`]/g, "")
+    .slice(0, 120);
 }
 
 export function createRequestId() {
@@ -29,11 +31,13 @@ export function logAiEvent(event, details = {}) {
   const safeDetails = Object.fromEntries(
     Object.entries(details).filter(([key]) => LOG_FIELDS.has(key)),
   );
-  console.info(JSON.stringify({
-    timestamp: new Date().toISOString(),
-    event,
-    ...safeDetails,
-  }));
+  console.info(
+    JSON.stringify({
+      timestamp: new Date().toISOString(),
+      event,
+      ...safeDetails,
+    }),
+  );
 }
 
 export async function notifyAiFailure({
@@ -52,7 +56,9 @@ export async function notifyAiFailure({
     if (!channel?.isTextBased()) return false;
 
     const providers = attempts.length
-      ? attempts.map((attempt) => `${safeLabel(attempt.provider)} (${safeLabel(attempt.model)})`).join(", ")
+      ? attempts
+          .map((attempt) => `${safeLabel(attempt.provider)} (${safeLabel(attempt.model)})`)
+          .join(", ")
       : "none configured";
     await channel.send({
       content:

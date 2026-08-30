@@ -27,13 +27,14 @@ function fallbackForStatus(status) {
 }
 
 function errorForStatus(status) {
-  const errorType = status === 429
-    ? "rate_limit"
-    : status >= 500
-      ? "server_error"
-      : status === 401 || status === 403
-        ? "authentication"
-        : "http_error";
+  const errorType =
+    status === 429
+      ? "rate_limit"
+      : status >= 500
+        ? "server_error"
+        : status === 401 || status === 403
+          ? "authentication"
+          : "http_error";
   return new AiProviderError("AI provider request failed", {
     status,
     errorType,
@@ -54,13 +55,13 @@ function getChatCompletionsUrl(baseUrl) {
   }
 
   if (!/^https?:$/.test(url.protocol)) {
-    throw new AiProviderError("Provider base URL must use HTTP or HTTPS", { errorType: "configuration" });
+    throw new AiProviderError("Provider base URL must use HTTP or HTTPS", {
+      errorType: "configuration",
+    });
   }
 
   const normalized = url.toString().replace(/\/$/, "");
-  return normalized.endsWith("/chat/completions")
-    ? normalized
-    : `${normalized}/chat/completions`;
+  return normalized.endsWith("/chat/completions") ? normalized : `${normalized}/chat/completions`;
 }
 
 function getTimeoutSignal() {
@@ -107,7 +108,8 @@ export async function generateWithOpenAiCompatible(
     });
   } catch (error) {
     throw new AiProviderError("AI provider network request failed", {
-      errorType: error?.name === "TimeoutError" || error?.name === "AbortError" ? "timeout" : "network",
+      errorType:
+        error?.name === "TimeoutError" || error?.name === "AbortError" ? "timeout" : "network",
       fallback: true,
     });
   }
@@ -136,7 +138,12 @@ export async function generateWithOpenAiCompatible(
 
 export async function generateWithGemini(
   provider,
-  { systemInstruction, contents, apiKey, geminiClientFactory = (key) => new GoogleGenAI({ apiKey: key }) },
+  {
+    systemInstruction,
+    contents,
+    apiKey,
+    geminiClientFactory = (key) => new GoogleGenAI({ apiKey: key }),
+  },
 ) {
   try {
     const ai = geminiClientFactory(apiKey);
@@ -164,13 +171,17 @@ export async function generateWithGemini(
 
 function validateProvider(provider) {
   if (!provider?.name || !provider?.model) {
-    throw new AiProviderError("Provider name and model are required", { errorType: "configuration" });
+    throw new AiProviderError("Provider name and model are required", {
+      errorType: "configuration",
+    });
   }
   if (![PROVIDER_TYPES.GEMINI, PROVIDER_TYPES.OPENAI_COMPATIBLE].includes(provider.type)) {
     throw new AiProviderError("Provider type is unsupported", { errorType: "configuration" });
   }
   if (provider.type === PROVIDER_TYPES.OPENAI_COMPATIBLE && !provider.baseUrl) {
-    throw new AiProviderError("OpenAI-compatible provider base URL is required", { errorType: "configuration" });
+    throw new AiProviderError("OpenAI-compatible provider base URL is required", {
+      errorType: "configuration",
+    });
   }
 }
 
@@ -210,9 +221,10 @@ export function createAiProviderService({
         });
         return text;
       } catch (error) {
-        const providerError = error instanceof AiProviderError
-          ? error
-          : new AiProviderError("AI provider request failed", { errorType: "provider_error" });
+        const providerError =
+          error instanceof AiProviderError
+            ? error
+            : new AiProviderError("AI provider request failed", { errorType: "provider_error" });
         const attempt = {
           provider: provider.name,
           model: provider.model,
@@ -242,7 +254,8 @@ export function createAiProviderService({
 
   async function testProvider(providerName, request = {}) {
     const provider = await db.aiProvider.findUnique({ where: { name: providerName } });
-    if (!provider) throw new AiProviderError("Provider was not found", { errorType: "configuration" });
+    if (!provider)
+      throw new AiProviderError("Provider was not found", { errorType: "configuration" });
 
     const startedAt = Date.now();
     await call(provider, {

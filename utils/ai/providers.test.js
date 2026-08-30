@@ -5,10 +5,7 @@ import {
   generateWithGemini,
   generateWithOpenAiCompatible,
 } from "./providers.js";
-import {
-  clearCredentialCache,
-  getProviderApiKey,
-} from "./config.js";
+import { clearCredentialCache, getProviderApiKey } from "./config.js";
 import { encryptApiKey } from "./crypto.js";
 
 const encryptionKey = Buffer.alloc(32, 9).toString("base64");
@@ -99,7 +96,8 @@ describe("AI provider service", () => {
   it("falls back to the next provider on a rate limit", async () => {
     const providers = [openAiProvider("first"), openAiProvider("second", 2)];
     const db = dbFor(providers);
-    const fetchImpl = vi.fn()
+    const fetchImpl = vi
+      .fn()
       .mockResolvedValueOnce({ ok: false, status: 429 })
       .mockResolvedValueOnce({
         ok: true,

@@ -25,14 +25,16 @@ function providerVersion(provider) {
 export async function ensureGeminiProvider(db = prisma) {
   if (!process.env.API_KEY || geminiBootstrap) return;
 
-  geminiBootstrap = db.aiProvider.upsert({
-    where: { name: DEFAULT_GEMINI.name },
-    update: {},
-    create: DEFAULT_GEMINI,
-  }).catch((error) => {
-    geminiBootstrap = undefined;
-    throw error;
-  });
+  geminiBootstrap = db.aiProvider
+    .upsert({
+      where: { name: DEFAULT_GEMINI.name },
+      update: {},
+      create: DEFAULT_GEMINI,
+    })
+    .catch((error) => {
+      geminiBootstrap = undefined;
+      throw error;
+    });
 
   await geminiBootstrap;
 }
