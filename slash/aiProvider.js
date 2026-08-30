@@ -99,6 +99,25 @@ async function handleAdd(interaction) {
   await reply(interaction, `Provider "${safeText(name)}" added.`);
 }
 
+export function buildProviderUpdateData({ model, baseUrl, priority, credentials }) {
+  const data = {};
+  if (model) data.model = model.trim();
+  if (baseUrl) data.baseUrl = baseUrl.trim();
+  if (priority !== null) data.priority = priority;
+  if (credentials) Object.assign(data, credentials);
+  return data;
+}
+
+export function getCredentialLabel(provider) {
+  if (provider.type === PROVIDER_TYPES.GEMINI) return "API_KEY env";
+  if (provider.apiKeyCiphertext) return "encrypted key";
+  return "missing key";
+}
+
+export function isTextChannel(channel) {
+  return channel?.isTextBased() === true;
+}
+
 async function handleUpdate(interaction) {
   const name = interaction.options.getString("name").trim();
   const provider = await prisma.aiProvider.findUnique({ where: { name } });
@@ -116,21 +135,18 @@ async function handleUpdate(interaction) {
     return reply(interaction, "The base URL cannot be empty.");
   }
 
-  const credentials = apiKey ? encryptApiKey(apiKey) : {};
+  let credentials = null;
+  if (apiKey) {
+    const encrypted = encryptApiKey(apiKey);
+    credentials = {
+      apiKeyCiphertext: encrypted.ciphertext,
+      apiKeyIv: encrypted.iv,
+      apiKeyAuthTag: encrypted.authTag,
+    };
+  }
   await prisma.aiProvider.update({
     where: { name },
-    data: {
-      ...(model ? { model: model.trim() } : {}),
-      ...(baseUrl ? { baseUrl: baseUrl.trim() } : {}),
-      ...(priority !== null ? { priority } : {}),
-      ...(apiKey
-        ? {
-            apiKeyCiphertext: credentials.ciphertext,
-            apiKeyIv: credentials.iv,
-            apiKeyAuthTag: credentials.authTag,
-          }
-        : {}),
-    },
+    data: buildProviderUpdateData({ model, baseUrl, priority, credentials }),
   });
   clearProviderCredentialCache(provider.id);
   await reply(interaction, `Provider "${safeText(name)}" updated.`);
@@ -163,12 +179,7 @@ async function handleList(interaction) {
   if (providers.length === 0) return reply(interaction, "No AI providers are configured.");
 
   const lines = providers.map((provider) => {
-    const credential =
-      provider.type === PROVIDER_TYPES.GEMINI
-        ? "API_KEY env"
-        : provider.apiKeyCiphertext
-          ? "encrypted key"
-          : "missing key";
+    const credential = getCredentialLabel(provider);
     return `${provider.priority}. ${safeText(provider.name)} | ${safeText(provider.type)} | ${safeText(provider.model)} | ${provider.enabled ? "enabled" : "disabled"} | ${credential}`;
   });
   await reply(interaction, lines.join("\n"));
@@ -193,7 +204,7 @@ async function handleTest(interaction) {
 
 async function handleSetLogChannel(interaction) {
   const channel = interaction.options.getChannel("channel");
-  if (!channel || !channel.isTextBased()) {
+  if (!isTextChannel(channel)) {
     return reply(interaction, "The operations channel must be text-based.");
   }
 

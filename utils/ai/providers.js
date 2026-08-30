@@ -27,14 +27,15 @@ function fallbackForStatus(status) {
 }
 
 function errorForStatus(status) {
-  const errorType =
-    status === 429
-      ? "rate_limit"
-      : status >= 500
-        ? "server_error"
-        : status === 401 || status === 403
-          ? "authentication"
-          : "http_error";
+  let errorType = "http_error";
+  if (status === 429) {
+    errorType = "rate_limit";
+  } else if (status >= 500) {
+    errorType = "server_error";
+  } else if (status === 401 || status === 403) {
+    errorType = "authentication";
+  }
+
   return new AiProviderError("AI provider request failed", {
     status,
     errorType,
@@ -78,8 +79,8 @@ function getTextContent(content) {
   if (typeof content === "string") return content;
   if (!Array.isArray(content)) return "";
   return content
-    .filter((part) => part && part.type === "text")
-    .map((part) => part.text || "")
+    .filter((part) => part?.type === "text")
+    .map((part) => part?.text || "")
     .join("");
 }
 

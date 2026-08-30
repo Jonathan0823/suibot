@@ -83,7 +83,13 @@ describe("OpenAI-compatible provider", () => {
       fetchImpl: vi.fn().mockResolvedValue({
         ok: true,
         json: async () => ({
-          choices: [{ message: { content: [{ type: "text", text: "hello" }] } }],
+          choices: [
+            {
+              message: {
+                content: [null, { type: "image" }, { type: "text", text: "hello" }],
+              },
+            },
+          ],
         }),
       }),
     });
