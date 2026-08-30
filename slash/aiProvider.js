@@ -3,7 +3,7 @@ import prisma from "../lib/prisma.js";
 import { clearProviderCredentialCache, loadAiConfig, PROVIDER_TYPES } from "../utils/ai/config.js";
 import { encryptApiKey } from "../utils/ai/crypto.js";
 import { AiProviderError, createAiProviderService } from "../utils/ai/providers.js";
-import { logAiEvent } from "../utils/ai/observability.js";
+import { createRequestId, logAiEvent } from "../utils/ai/observability.js";
 
 const EPHEMERAL = MessageFlagsBitField.Flags.Ephemeral;
 
@@ -297,11 +297,20 @@ export default {
       if (subcommand === "test") return await handleTest(interaction);
       if (subcommand === "set-log-channel") return await handleSetLogChannel(interaction);
     } catch (error) {
+      const requestId = createRequestId();
       logAiEvent("ai_admin_command_failed", {
+        requestId,
         command: subcommand,
+        status: "failure",
         errorType: error instanceof AiProviderError ? error.errorType : "operation_failed",
+        errorName: error instanceof Error ? error.name : "UnknownError",
+        errorMessage: error instanceof Error ? error.message : String(error),
+        statusCode: Number.isInteger(error?.status) ? error.status : undefined,
       });
-      await reply(interaction, "The AI provider operation failed. Check the application logs.");
+      await reply(
+        interaction,
+        `The AI provider operation failed. Request ID: ${requestId}. Check the application logs.`,
+      );
     }
   },
 };
