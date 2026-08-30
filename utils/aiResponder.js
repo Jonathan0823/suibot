@@ -1,5 +1,4 @@
 import "dotenv/config";
-import { GoogleGenAI } from "@google/genai";
 import getUserName from "../helper/getUserName.js";
 import { titleCase } from "../helper/titleCase.js";
 import splitMessage from "../helper/splitMessage.js";
@@ -10,6 +9,12 @@ import { getCachedPrompt, setCachedPrompt } from "./memory/promptCache.js";
 import { createPromptBuilder } from "./prompt/builder.js";
 import { createMemoryManager } from "./memory/memoryManager.js";
 import { createFileStorage } from "./memory/storage.js";
+import { createAiProviderService } from "./ai/providers.js";
+import {
+  createRequestId,
+  logAiEvent,
+  notifyAiFailure,
+} from "./ai/observability.js";
 
 // Initialize memory layers
 const recentMemory = createRecentMemory(10);
@@ -17,10 +22,10 @@ const summaryMemory = createSummaryMemory({ turnsThreshold: 10 });
 const promptBuilder = createPromptBuilder();
 const memoryManager = createMemoryManager({ ttlHours: 24 });
 const fileStorage = createFileStorage();
+const providerService = createAiProviderService({ logEvent: logAiEvent });
 
 async function aiResponder(message, args, systemInstruction, commandName) {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-
+  const requestId = createRequestId();
   const user = getUserName(message);
   const userId = message.author?.id || "unknown";
   const channelId = message.channelId;
@@ -101,16 +106,17 @@ async function aiResponder(message, args, systemInstruction, commandName) {
       user,
     });
 
-    const result = await ai.models.generateContent({
-      model: "gemini-2.5-flash-lite",
+    const aiResponse = await providerService.generate({
+      requestId,
+      commandName,
       contents,
-      config: {
-        ...promptConfig,
-        tools: [{ googleSearch: {} }],
-      },
+      systemInstruction: promptConfig.systemInstruction,
+      notifyFailure: (details) => notifyAiFailure({
+        client: message.client,
+        commandName,
+        ...details,
+      }),
     });
-
-    const aiResponse = result.text;
 
     const responseParts = splitMessage(aiResponse);
 
@@ -145,7 +151,12 @@ async function aiResponder(message, args, systemInstruction, commandName) {
       lastSaved: Date.now(),
     });
   } catch (error) {
-    console.error("Gemini API error:", error);
+    logAiEvent("ai_generation_failed", {
+      requestId,
+      commandName,
+      errorType: error?.name || "unknown",
+      attempts: error?.attempts?.length || 0,
+    });
     await message.channel.send(
       "Sorry, something went wrong with the AI generation.",
     );
