@@ -82,3 +82,27 @@ model UserMemory {
   @@unique([userId, guildId, channelId, key])
   @@index([userId, guildId, channelId])
 }
+
+model AiProvider {
+  id               String   @id @default(cuid())
+  name             String   @unique
+  type             String // gemini or openai-compatible
+  model            String
+  baseUrl          String?
+  apiKeyCiphertext String?  @db.Text
+  apiKeyIv         String?
+  apiKeyAuthTag    String?
+  enabled          Boolean  @default(true)
+  priority         Int      @default(100)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([enabled, priority])
+}
+
+model AiSettings {
+  id                  Int      @id @default(1)
+  operationsChannelId String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+}
