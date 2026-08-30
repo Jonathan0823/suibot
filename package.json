@@ -10,7 +10,7 @@
     "coverage": "vitest run --coverage",
     "lint": "biome lint .",
     "format": "biome format --write .",
-    "format:check": "biome format --changed",
+    "format:check": "biome format --changed --since=origin/master --no-errors-on-unmatched",
     "start": "node index.js"
   },
   "keywords": [],
