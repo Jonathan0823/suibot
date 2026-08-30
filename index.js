@@ -52,23 +52,18 @@ client.on("clientReady", async () => {
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+const isRuntimeModule = (file) => file.endsWith(".js") && !file.endsWith(".test.js");
 const commandMap = new Map();
 const commandsPath = path.join(__dirname, "command");
-const commandFiles = fs
-  .readdirSync(commandsPath)
-  .filter((file) => file.endsWith(".js"));
+const commandFiles = fs.readdirSync(commandsPath).filter(isRuntimeModule);
 
 const slashCommands = [];
 const slashCommandMap = new Map();
 const slashPath = path.join(__dirname, "slash");
-const slashFiles = fs
-  .readdirSync(slashPath)
-  .filter((file) => file.endsWith(".js"));
+const slashFiles = fs.readdirSync(slashPath).filter(isRuntimeModule);
 
 const eventsPath = path.join(__dirname, "events");
-const eventFiles = fs
-  .readdirSync(eventsPath)
-  .filter((file) => file.endsWith(".js"));
+const eventFiles = fs.readdirSync(eventsPath).filter(isRuntimeModule);
 
 for (const file of commandFiles) {
   const fullPath = path.join(commandsPath, file);
@@ -98,9 +93,7 @@ for (const file of eventFiles) {
   }
 }
 
-const rest = new REST({ version: "10" }).setToken(
-  process.env.DISCORD_BOT_TOKEN,
-);
+const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_BOT_TOKEN);
 
 try {
   console.log("Started refreshing application (/) commands.");
@@ -120,11 +113,7 @@ const handleMessageCommand = async (interaction) => {
     return true;
   }
 
-  if (
-    !interaction.content ||
-    interaction.author.bot ||
-    !interaction.content.startsWith("?")
-  ) {
+  if (!interaction.content || interaction.author.bot || !interaction.content.startsWith("?")) {
     return false;
   }
 
@@ -145,9 +134,7 @@ const handleMessageCommand = async (interaction) => {
       console.error(`Error in message command ${commandName}:`, error);
 
       if (!interaction.replied && !interaction.deferred) {
-        await interaction.reply(
-          "There was an error executing that command!",
-        );
+        await interaction.reply("There was an error executing that command!");
       }
       return true;
     }
@@ -164,10 +151,7 @@ const handleSlashCommand = async (interaction) => {
       await command.execute(interaction);
       return true;
     } catch (error) {
-      console.error(
-        `Error in slash command ${interaction.commandName}:`,
-        error,
-      );
+      console.error(`Error in slash command ${interaction.commandName}:`, error);
 
       if (!interaction.replied && !interaction.deferred) {
         await interaction.reply({
