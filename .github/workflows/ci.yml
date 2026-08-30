@@ -17,6 +17,9 @@ jobs:
   quality:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      # Prisma validates the schema without connecting to a database.
+      DATABASE_URL: postgresql://ci:ci@localhost:5432/ci?schema=public
 
     steps:
       - name: Checkout
