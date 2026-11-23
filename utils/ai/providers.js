@@ -91,9 +91,78 @@ function getTextContent(content) {
     .join("");
 }
 
+function toUsage(promptTokens, outputTokens) {
+  const prompt = Number(promptTokens) || 0;
+  const output = Number(outputTokens) || 0;
+  if (prompt === 0 && output === 0) return null;
+  return { promptTokens: prompt, outputTokens: output };
+}
+
+function mergeTurns(turns) {
+  const merged = [];
+  for (const turn of turns ?? []) {
+    const last = merged.at(-1);
+    if (last && last.role === turn.role) last.text = `${last.text}\n\n${turn.text}`;
+    else merged.push({ role: turn.role, text: turn.text });
+  }
+  return merged;
+}
+
+// null when the arguments are not a JSON object.
+function parseJsonObject(text) {
+  try {
+    const value = JSON.parse(text || "{}");
+    return value && typeof value === "object" && !Array.isArray(value) ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+// Tool rounds of one reply, as OpenAI-compatible messages.
+function openAiToolMessages(toolRounds) {
+  return (toolRounds ?? []).flatMap((round) => [
+    {
+      role: "assistant",
+      content: null,
+      tool_calls: round.calls.map((call) => ({
+        id: call.id,
+        type: "function",
+        function: { name: call.name, arguments: JSON.stringify(call.args ?? {}) },
+      })),
+    },
+    ...round.results.map((result) => ({
+      role: "tool",
+      tool_call_id: result.id,
+      content: result.output,
+    })),
+  ]);
+}
+
+// Tool rounds of one reply, as Gemini contents.
+function geminiToolContents(toolRounds) {
+  return (toolRounds ?? []).flatMap((round) => [
+    {
+      role: "model",
+      parts: round.calls.map((call) => ({
+        functionCall: { name: call.name, args: call.args ?? {} },
+        // Gemini 3+ rejects a functionCall without a signature. Calls from another
+        // provider (e.g. OpenAI-compatible, before a fallback) have none, so use Google's
+        // documented sentinel as a last resort. It may lower quality; real signatures are kept.
+        thoughtSignature: call.thoughtSignature || "skip_thought_signature_validator",
+      })),
+    },
+    {
+      role: "user",
+      parts: round.results.map((result) => ({
+        functionResponse: { name: result.name, response: { output: result.output } },
+      })),
+    },
+  ]);
+}
+
 export async function generateWithOpenAiCompatible(
   provider,
-  { systemInstruction, contents, apiKey, fetchImpl = fetch },
+  { systemInstruction, turns, toolDefs, toolRounds, apiKey, fetchImpl = fetch },
 ) {
   const url = getChatCompletionsUrl(provider.baseUrl);
   let response;
@@ -109,8 +178,24 @@ export async function generateWithOpenAiCompatible(
         model: provider.model,
         messages: [
           { role: "system", content: systemInstruction },
-          { role: "user", content: contents },
+          ...turns.map((turn) => ({
+            role: turn.role === "model" ? "assistant" : "user",
+            content: turn.text,
+          })),
+          ...openAiToolMessages(toolRounds),
         ],
+        ...(toolDefs?.length
+          ? {
+              tools: toolDefs.map((tool) => ({
+                type: "function",
+                function: {
+                  name: tool.name,
+                  description: tool.description,
+                  parameters: tool.parameters,
+                },
+              })),
+            }
+          : {}),
       }),
       signal: getTimeoutSignal(),
     });
@@ -134,38 +219,94 @@ export async function generateWithOpenAiCompatible(
     });
   }
 
-  const text = getTextContent(data?.choices?.[0]?.message?.content);
+  const message = data?.choices?.[0]?.message;
+  const toolCalls = (message?.tool_calls ?? []).map((call) => {
+    const args = parseJsonObject(call.function?.arguments);
+    return {
+      id: call.id,
+      name: call.function?.name,
+      args: args ?? {},
+      ...(args ? {} : { invalidArgs: true }),
+    };
+  });
+  const usage = toUsage(data?.usage?.prompt_tokens, data?.usage?.completion_tokens);
+  const text = getTextContent(message?.content);
+  if (toolCalls.length) return { text, toolCalls, usage };
   if (!text) {
     throw new AiProviderError("AI provider returned no text", {
       errorType: "invalid_response",
       fallback: true,
     });
   }
-  return text;
+  return { text, usage };
 }
 
 export async function generateWithGemini(
   provider,
   {
     systemInstruction,
-    contents,
+    turns,
+    googleSearch = true,
+    toolDefs,
+    toolRounds,
     apiKey,
     geminiClientFactory = (key) => new GoogleGenAI({ apiKey: key }),
   },
 ) {
   try {
+    const merged = mergeTurns(turns);
+    if (merged[0]?.role !== "user") {
+      throw new AiProviderError("Turn list must start with a user Turn", {
+        errorType: "configuration",
+      });
+    }
     const ai = geminiClientFactory(apiKey);
     const result = await ai.models.generateContent({
       model: provider.model,
-      contents,
+      contents: [
+        ...merged.map((turn) => ({ role: turn.role, parts: [{ text: turn.text }] })),
+        ...geminiToolContents(toolRounds),
+      ],
       config: {
         systemInstruction,
-        tools: [{ googleSearch: {} }],
+        // Gemini rejects built-in googleSearch combined with function calling.
+        ...(toolDefs?.length
+          ? {
+              tools: [
+                {
+                  functionDeclarations: toolDefs.map((tool) => ({
+                    name: tool.name,
+                    description: tool.description,
+                    parametersJsonSchema: tool.parameters,
+                  })),
+                },
+              ],
+            }
+          : googleSearch
+            ? { tools: [{ googleSearch: {} }] }
+            : {}),
       },
     });
+    const parts = result?.candidates?.[0]?.content?.parts ?? [];
+    const toolCalls = parts
+      .filter((part) => part.functionCall)
+      .map((part, index) => ({
+        id: part.functionCall.id || `call_${index}`,
+        name: part.functionCall.name,
+        args: part.functionCall.args ?? {},
+        ...(part.thoughtSignature ? { thoughtSignature: part.thoughtSignature } : {}),
+      }));
+    const usage = toUsage(
+      result?.usageMetadata?.promptTokenCount,
+      result?.usageMetadata?.candidatesTokenCount,
+    );
+    if (toolCalls.length) return { text: "", toolCalls, usage };
     const text = result?.text;
     if (!text) throw new Error("Gemini returned no text");
-    return text;
+    const sources = (result?.candidates?.[0]?.groundingMetadata?.groundingChunks ?? [])
+      .map((chunk) => chunk?.web?.uri)
+      .filter(Boolean);
+    return { text, ...(sources.length ? { sources } : {}), usage };
   } catch (error) {
     if (error instanceof AiProviderError) throw error;
     const status = Number(error?.status || error?.statusCode);
@@ -247,7 +388,7 @@ export function createAiProviderService({
     for (const [index, provider] of providers.entries()) {
       const startedAt = clock();
       try {
-        const text = await call(provider, request);
+        const result = await call(provider, request);
         logEvent("ai_request", {
           requestId: request.requestId,
           provider: provider.name,
@@ -257,7 +398,7 @@ export function createAiProviderService({
           attempt: index + 1,
           fallback: index > 0,
         });
-        return text;
+        return result;
       } catch (error) {
         const providerError =
           error instanceof AiProviderError
@@ -299,7 +440,7 @@ export function createAiProviderService({
     const startedAt = clock();
     await call(provider, {
       systemInstruction: "Reply with the single word OK.",
-      contents: "Reply with the single word OK.",
+      turns: [{ role: "user", text: "Reply with the single word OK." }],
       ...request,
     });
     return {
@@ -309,7 +450,23 @@ export function createAiProviderService({
     };
   }
 
-  return { generate, testProvider };
+  // Separate Gemini request with only googleSearch on, used by the web_search Tool.
+  async function search(query) {
+    const { providers } = await loadAiConfig(db);
+    const provider = providers.find((candidate) => candidate.type === PROVIDER_TYPES.GEMINI);
+    if (!provider) {
+      throw new AiProviderError("No Gemini provider is available", { errorType: "configuration" });
+    }
+    return generateWithGemini(provider, {
+      systemInstruction: "Answer the query briefly using web search. Keep it under 150 words.",
+      turns: [{ role: "user", text: query }],
+      googleSearch: true,
+      apiKey: getProviderApiKey(provider, encryptionKey),
+      geminiClientFactory,
+    });
+  }
+
+  return { generate, testProvider, search };
 }
 
 export default createAiProviderService;

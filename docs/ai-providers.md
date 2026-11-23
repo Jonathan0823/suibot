@@ -18,6 +18,10 @@ openssl rand -base64 32
 
 `AI_ENCRYPTION_KEY` is the master key for database-managed provider credentials. Back it up in the deployment secret manager. If it is lost, encrypted provider keys cannot be recovered. Master-key rotation is not currently supported.
 
+## Conversation size
+
+`CONVERSATION_TOKEN_BUDGET` (optional, default 8000) is the global token budget for a Conversation's Summary plus recent Turns. Compaction starts at about 80% of it and folds the oldest Turns into the Summary until about 40% is left. Keep it within the smallest context window of any configured model, because provider fallback can switch models mid-Conversation. See ADR-0003.
+
 ## Commands
 
 All subcommands are restricted to `AI_ADMIN_USER_IDS` and reply ephemerally.

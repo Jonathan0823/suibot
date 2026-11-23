@@ -15,10 +15,16 @@ const LOG_FIELDS = new Set([
   "attempts",
   "fallback",
   "errorType",
+  "turnsFolded",
+  "tokensBefore",
+  "tokensAfter",
+  "outcome",
   "errorName",
   "errorMessage",
   "statusCode",
   "command",
+  "tool",
+  "ok",
 ]);
 
 function sanitizeErrorMessage(value) {

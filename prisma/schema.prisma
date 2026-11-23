@@ -106,3 +106,21 @@ model AiSettings {
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 }
+
+model Conversation {
+  id         String    @id @default(cuid())
+  guildId    String
+  channelId  String
+  userId     String
+  persona    String // Persona command name, e.g. "hutao"
+  summary    String    @default("") @db.Text
+  turns      Json      @default("[]")
+  lastActive DateTime?
+  // Bumped on every save; Compaction compares it to spot a stale result.
+  version    Int       @default(0)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@unique([guildId, channelId, userId, persona])
+  @@index([lastActive])
+}

@@ -56,12 +56,16 @@ describe("OpenAI-compatible provider", () => {
 
     const text = await generateWithOpenAiCompatible(openAiProvider("test"), {
       systemInstruction: "Be helpful",
-      contents: "from user: hi",
+      turns: [
+        { role: "user", text: "from Alice: hi" },
+        { role: "model", text: "hello there" },
+        { role: "user", text: "from Alice: again" },
+      ],
       apiKey: "secret",
       fetchImpl,
     });
 
-    expect(text).toBe("hello");
+    expect(text).toEqual({ text: "hello", usage: null });
     expect(fetchImpl).toHaveBeenCalledWith(
       "https://example.test/v1/chat/completions",
       expect.objectContaining({
@@ -71,14 +75,35 @@ describe("OpenAI-compatible provider", () => {
     );
     expect(JSON.parse(fetchImpl.mock.calls[0][1].body).messages).toEqual([
       { role: "system", content: "Be helpful" },
-      { role: "user", content: "from user: hi" },
+      { role: "user", content: "from Alice: hi" },
+      { role: "assistant", content: "hello there" },
+      { role: "user", content: "from Alice: again" },
     ]);
+  });
+
+  it("returns token usage when reported and null when zero or missing", async () => {
+    const run = (usage) =>
+      generateWithOpenAiCompatible(openAiProvider("test"), {
+        systemInstruction: "s",
+        turns: [{ role: "user", text: "hi" }],
+        apiKey: "secret",
+        fetchImpl: vi.fn().mockResolvedValue({
+          ok: true,
+          json: async () => ({ choices: [{ message: { content: "hello" } }], usage }),
+        }),
+      });
+    expect((await run({ prompt_tokens: 12, completion_tokens: 3 })).usage).toEqual({
+      promptTokens: 12,
+      outputTokens: 3,
+    });
+    expect((await run({ prompt_tokens: 0, completion_tokens: 0 })).usage).toBeNull();
+    expect((await run(undefined)).usage).toBeNull();
   });
 
   it("supports text parts in a compatible response", async () => {
     const text = await generateWithOpenAiCompatible(openAiProvider("test"), {
       systemInstruction: "Be helpful",
-      contents: "hi",
+      turns: [{ role: "user", text: "hi" }],
       apiKey: "secret",
       fetchImpl: vi.fn().mockResolvedValue({
         ok: true,
@@ -94,7 +119,7 @@ describe("OpenAI-compatible provider", () => {
       }),
     });
 
-    expect(text).toBe("hello");
+    expect(text.text).toBe("hello");
   });
 });
 
@@ -115,10 +140,10 @@ describe("AI provider service", () => {
       requestId: "request-1",
       commandName: "test",
       systemInstruction: "system",
-      contents: "question",
+      turns: [{ role: "user", text: "question" }],
     });
 
-    expect(text).toBe("fallback");
+    expect(text.text).toBe("fallback");
     expect(fetchImpl).toHaveBeenCalledTimes(2);
   });
 
@@ -131,9 +156,9 @@ describe("AI provider service", () => {
       fetchImpl,
     });
 
-    await expect(service.generate({ contents: "question" })).rejects.toBeInstanceOf(
-      AiGenerationError,
-    );
+    await expect(
+      service.generate({ turns: [{ role: "user", text: "question" }] }),
+    ).rejects.toBeInstanceOf(AiGenerationError);
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
@@ -147,21 +172,363 @@ describe("AI provider service", () => {
       { type: "gemini", model: "gemini-model" },
       {
         systemInstruction: "system",
-        contents: "question",
+        turns: [
+          { role: "user", text: "q1" },
+          { role: "user", text: "q2" },
+          { role: "model", text: "a1" },
+          { role: "user", text: "q3" },
+        ],
         apiKey: "gemini-key",
         geminiClientFactory,
       },
     );
 
-    expect(text).toBe("gemini reply");
+    expect(text).toEqual({ text: "gemini reply", usage: null });
     expect(generateContent).toHaveBeenCalledWith({
       model: "gemini-model",
-      contents: "question",
+      contents: [
+        { role: "user", parts: [{ text: "q1\n\nq2" }] },
+        { role: "model", parts: [{ text: "a1" }] },
+        { role: "user", parts: [{ text: "q3" }] },
+      ],
       config: {
         systemInstruction: "system",
         tools: [{ googleSearch: {} }],
       },
     });
+  });
+
+  it("removes the googleSearch tool when turned off", async () => {
+    const generateContent = vi.fn().mockResolvedValue({ text: "ok" });
+    await generateWithGemini(
+      { type: "gemini", model: "gemini-model" },
+      {
+        systemInstruction: "system",
+        turns: [{ role: "user", text: "q" }],
+        googleSearch: false,
+        apiKey: "k",
+        geminiClientFactory: () => ({ models: { generateContent } }),
+      },
+    );
+    expect(generateContent.mock.calls[0][0].config).toEqual({ systemInstruction: "system" });
+  });
+
+  it("reads Gemini usageMetadata and maps zero or missing to null", async () => {
+    const run = (usageMetadata) =>
+      generateWithGemini(
+        { type: "gemini", model: "m" },
+        {
+          systemInstruction: "s",
+          turns: [{ role: "user", text: "q" }],
+          apiKey: "k",
+          geminiClientFactory: () => ({
+            models: { generateContent: vi.fn().mockResolvedValue({ text: "ok", usageMetadata }) },
+          }),
+        },
+      );
+    expect((await run({ promptTokenCount: 20, candidatesTokenCount: 5 })).usage).toEqual({
+      promptTokens: 20,
+      outputTokens: 5,
+    });
+    expect((await run({ promptTokenCount: 0, candidatesTokenCount: 0 })).usage).toBeNull();
+    expect((await run(undefined)).usage).toBeNull();
+  });
+
+  it("rejects a Gemini Turn list that does not start with a user Turn", async () => {
+    await expect(
+      generateWithGemini(
+        { type: "gemini", model: "m" },
+        {
+          systemInstruction: "s",
+          turns: [{ role: "model", text: "hi" }],
+          apiKey: "k",
+          geminiClientFactory: () => ({ models: { generateContent: vi.fn() } }),
+        },
+      ),
+    ).rejects.toMatchObject({ errorType: "configuration" });
+  });
+});
+
+describe("Tool calls through the provider adapters", () => {
+  const toolDefs = [
+    {
+      name: "get_current_time",
+      description: "Current time",
+      parameters: { type: "object", properties: {} },
+    },
+  ];
+  const rounds = [
+    {
+      calls: [{ id: "c1", name: "get_current_time", args: {} }],
+      results: [{ id: "c1", name: "get_current_time", output: "12:00" }],
+    },
+  ];
+
+  it("sends Gemini functionDeclarations without googleSearch and reads functionCall parts", async () => {
+    const generateContent = vi.fn().mockResolvedValue({
+      candidates: [
+        {
+          content: {
+            parts: [{ functionCall: { name: "get_current_time", args: {} } }],
+          },
+        },
+      ],
+    });
+    const result = await generateWithGemini(
+      { type: "gemini", model: "m" },
+      {
+        systemInstruction: "s",
+        turns: [{ role: "user", text: "what time is it" }],
+        toolDefs,
+        apiKey: "k",
+        geminiClientFactory: () => ({ models: { generateContent } }),
+      },
+    );
+
+    expect(result.toolCalls).toEqual([
+      expect.objectContaining({ name: "get_current_time", args: {} }),
+    ]);
+    const config = generateContent.mock.calls[0][0].config;
+    expect(config.tools).toEqual([
+      {
+        functionDeclarations: [
+          {
+            name: "get_current_time",
+            description: "Current time",
+            parametersJsonSchema: { type: "object", properties: {} },
+          },
+        ],
+      },
+    ]);
+    expect(JSON.stringify(config)).not.toContain("googleSearch");
+  });
+
+  it("marks a Gemini functionCall without a thoughtSignature with the skip sentinel", async () => {
+    const generateContent = vi.fn().mockResolvedValue({ text: "It is noon" });
+    await generateWithGemini(
+      { type: "gemini", model: "m" },
+      {
+        systemInstruction: "s",
+        turns: [{ role: "user", text: "what time is it" }],
+        toolDefs,
+        toolRounds: rounds,
+        apiKey: "k",
+        geminiClientFactory: () => ({ models: { generateContent } }),
+      },
+    );
+    expect(generateContent.mock.calls[0][0].contents[1].parts).toEqual([
+      {
+        functionCall: { name: "get_current_time", args: {} },
+        thoughtSignature: "skip_thought_signature_validator",
+      },
+    ]);
+  });
+
+  it("keeps a real Gemini thoughtSignature on a replayed functionCall", async () => {
+    const generateContent = vi.fn().mockResolvedValue({ text: "It is noon" });
+    const signedRounds = [
+      {
+        calls: [{ id: "c1", name: "get_current_time", args: {}, thoughtSignature: "real-sig" }],
+        results: [{ id: "c1", name: "get_current_time", output: "12:00" }],
+      },
+    ];
+    await generateWithGemini(
+      { type: "gemini", model: "m" },
+      {
+        systemInstruction: "s",
+        turns: [{ role: "user", text: "what time is it" }],
+        toolDefs,
+        toolRounds: signedRounds,
+        apiKey: "k",
+        geminiClientFactory: () => ({ models: { generateContent } }),
+      },
+    );
+    expect(generateContent.mock.calls[0][0].contents[1].parts).toEqual([
+      { functionCall: { name: "get_current_time", args: {} }, thoughtSignature: "real-sig" },
+    ]);
+  });
+
+  it("answers Gemini function calls with functionResponse parts", async () => {
+    const generateContent = vi.fn().mockResolvedValue({ text: "It is noon" });
+    await generateWithGemini(
+      { type: "gemini", model: "m" },
+      {
+        systemInstruction: "s",
+        turns: [{ role: "user", text: "what time is it" }],
+        toolDefs,
+        toolRounds: rounds,
+        apiKey: "k",
+        geminiClientFactory: () => ({ models: { generateContent } }),
+      },
+    );
+    expect(generateContent.mock.calls[0][0].contents.slice(1)).toEqual([
+      {
+        role: "model",
+        parts: [
+          {
+            functionCall: { name: "get_current_time", args: {} },
+            thoughtSignature: "skip_thought_signature_validator",
+          },
+        ],
+      },
+      {
+        role: "user",
+        parts: [
+          {
+            functionResponse: { name: "get_current_time", response: { output: "12:00" } },
+          },
+        ],
+      },
+    ]);
+  });
+
+  it("sends OpenAI-compatible tools and reads tool_calls", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        choices: [
+          {
+            message: {
+              content: null,
+              tool_calls: [
+                {
+                  id: "c1",
+                  type: "function",
+                  function: { name: "get_current_time", arguments: "{}" },
+                },
+              ],
+            },
+          },
+        ],
+      }),
+    });
+    const result = await generateWithOpenAiCompatible(openAiProvider("t"), {
+      systemInstruction: "s",
+      turns: [{ role: "user", text: "time?" }],
+      toolDefs,
+      apiKey: "k",
+      fetchImpl,
+    });
+    expect(result.toolCalls).toEqual([{ id: "c1", name: "get_current_time", args: {} }]);
+    expect(JSON.parse(fetchImpl.mock.calls[0][1].body).tools).toEqual([
+      {
+        type: "function",
+        function: {
+          name: "get_current_time",
+          description: "Current time",
+          parameters: { type: "object", properties: {} },
+        },
+      },
+    ]);
+  });
+
+  it("flags malformed OpenAI-compatible tool arguments instead of passing {} silently", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        choices: [
+          {
+            message: {
+              content: null,
+              tool_calls: [
+                { id: "c1", function: { name: "get_current_time", arguments: "{oops" } },
+                { id: "c2", function: { name: "get_current_time", arguments: "" } },
+              ],
+            },
+          },
+        ],
+      }),
+    });
+    const result = await generateWithOpenAiCompatible(openAiProvider("t"), {
+      systemInstruction: "s",
+      turns: [{ role: "user", text: "time?" }],
+      toolDefs,
+      apiKey: "k",
+      fetchImpl,
+    });
+    expect(result.toolCalls).toEqual([
+      { id: "c1", name: "get_current_time", args: {}, invalidArgs: true },
+      { id: "c2", name: "get_current_time", args: {} },
+    ]);
+  });
+
+  it("answers OpenAI-compatible tool calls with role tool messages", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ choices: [{ message: { content: "It is noon" } }] }),
+    });
+    await generateWithOpenAiCompatible(openAiProvider("t"), {
+      systemInstruction: "s",
+      turns: [{ role: "user", text: "time?" }],
+      toolDefs,
+      toolRounds: rounds,
+      apiKey: "k",
+      fetchImpl,
+    });
+    expect(JSON.parse(fetchImpl.mock.calls[0][1].body).messages.slice(2)).toEqual([
+      {
+        role: "assistant",
+        content: null,
+        tool_calls: [
+          { id: "c1", type: "function", function: { name: "get_current_time", arguments: "{}" } },
+        ],
+      },
+      { role: "tool", tool_call_id: "c1", content: "12:00" },
+    ]);
+  });
+
+  it("returns Gemini grounding source URLs", async () => {
+    const result = await generateWithGemini(
+      { type: "gemini", model: "m" },
+      {
+        systemInstruction: "s",
+        turns: [{ role: "user", text: "q" }],
+        apiKey: "k",
+        geminiClientFactory: () => ({
+          models: {
+            generateContent: vi.fn().mockResolvedValue({
+              text: "answer",
+              candidates: [
+                {
+                  groundingMetadata: {
+                    groundingChunks: [
+                      { web: { uri: "https://a.test" } },
+                      { web: { uri: "https://b.test" } },
+                    ],
+                  },
+                },
+              ],
+            }),
+          },
+        }),
+      },
+    );
+    expect(result.sources).toEqual(["https://a.test", "https://b.test"]);
+  });
+});
+
+describe("web search", () => {
+  it("queries the first Gemini provider with only googleSearch on", async () => {
+    process.env.API_KEY = "gemini-key";
+    const generateContent = vi.fn().mockResolvedValue({ text: "answer" });
+    const gemini = { id: "g", name: "gemini", type: "gemini", model: "gm", enabled: true };
+    const db = dbFor([openAiProvider("a"), gemini]);
+    db.aiProvider.upsert.mockResolvedValue({});
+    const service = createAiProviderService({
+      db,
+      encryptionKey,
+      geminiClientFactory: () => ({ models: { generateContent } }),
+    });
+
+    const result = await service.search("news");
+
+    expect(result.text).toBe("answer");
+    expect(generateContent.mock.calls[0][0].config.tools).toEqual([{ googleSearch: {} }]);
+  });
+
+  it("fails when no Gemini provider is configured", async () => {
+    const service = createAiProviderService({ db: dbFor([openAiProvider("a")]), encryptionKey });
+    await expect(service.search("news")).rejects.toMatchObject({ errorType: "configuration" });
   });
 });
 
@@ -194,7 +561,7 @@ describe("AI failure alerts", () => {
     requestId: "request-1",
     commandName: "yukinon",
     systemInstruction: "system",
-    contents: "secret question",
+    turns: [{ role: "user", text: "secret question" }],
   };
 
   function serviceFor(
@@ -334,7 +701,7 @@ describe("AI failure alerts", () => {
       fetchImpl,
     });
 
-    await expect(service.generate(request)).resolves.toBe("fallback");
+    await expect(service.generate(request)).resolves.toMatchObject({ text: "fallback" });
 
     expect(alert).not.toHaveBeenCalled();
   });
