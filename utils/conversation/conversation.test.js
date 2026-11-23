@@ -1,5 +1,9 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { createConversation } from "./conversation.js";
+import { createFileStore } from "./fileStore.js";
 import { createMemoryStore } from "./memoryStore.js";
 
 const scope = { guildId: "g1", channelId: "c1", userId: "u1", commandName: "hutao" };
@@ -232,6 +236,43 @@ describe("Conversation idle expiry", () => {
     await say(conversation, "later");
     expect(calls[0].contents).toContain("Alice: hi\nhutao: boo!");
     expect(store.get(key).lastActive).toBe(86400000000);
+  });
+
+  it("does not expire a legacy file record without a timestamp; its next turn sets one", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "conversation-legacy-"));
+    try {
+      const file = path.join(dir, "memory.json");
+      fs.writeFileSync(
+        file,
+        JSON.stringify({
+          [key]: {
+            recent: [
+              { sender: "Alice", content: "hi" },
+              { sender: "hutao", content: "boo!" },
+            ],
+            summary: "",
+          },
+        }),
+      );
+      const store = createFileStore({ storagePath: file });
+      const calls = [];
+      const generate = async (request) => {
+        calls.push(request);
+        return "boo!";
+      };
+      const conversation = createConversation({
+        store,
+        generate,
+        now: () => 86400000000,
+      });
+
+      await say(conversation, "later");
+
+      expect(calls[0].contents).toContain("Alice: hi\nhutao: boo!");
+      expect(store.get(key).lastActive).toBe(86400000000);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it("uses tunable idle expiry and sweep interval", async () => {

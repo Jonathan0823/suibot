@@ -134,4 +134,16 @@ describe("file conversation store", () => {
 
     expect(write).toHaveBeenCalledTimes(3);
   });
+
+  it("keeps a legacy record with no timestamp without a last-active time", () => {
+    fs.writeFileSync(
+      file,
+      JSON.stringify({ k: { recent: [{ sender: "Alice", content: "hi" }], summary: "" } }),
+    );
+
+    const loaded = createFileStore({ storagePath: file }).get("k");
+    expect(loaded.recent).toEqual([{ sender: "Alice", content: "hi" }]);
+    expect(loaded.lastActive).toBeUndefined();
+  });
+
 });

@@ -19,7 +19,7 @@ function normalizeRecord(record) {
       ? record.lastActive
       : typeof record.lastSaved === "number"
         ? record.lastSaved
-        : 0;
+        : undefined;
   return {
     recent: Array.isArray(record.recent) ? record.recent : [],
     summary: typeof summary === "string" ? summary : "",
