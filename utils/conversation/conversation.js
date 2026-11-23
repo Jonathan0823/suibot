@@ -40,23 +40,39 @@ function summarize(turns) {
 export function createConversation({ store, generate, now = Date.now, ...tunables }) {
   const cfg = { ...DEFAULTS, ...tunables };
   let lastSweepAt = null;
+  const queues = new Map();
+
+  // One operation at a time per Conversation key; different keys run concurrently.
+  function enqueue(key, operation) {
+    const run = (queues.get(key) ?? Promise.resolve()).then(operation);
+    const tail = run.catch(() => {});
+    queues.set(key, tail);
+    tail.then(() => {
+      if (queues.get(key) === tail) queues.delete(key);
+    });
+    return run;
+  }
 
   function isExpired(record, at) {
     return typeof record?.lastActive === "number" && at - record.lastActive > cfg.idleExpiryMs;
   }
 
-  function sweepIfDue(at) {
+  // Skips `ownKey`: the caller is already inside that Conversation's queue and load() expires it.
+  async function sweepIfDue(at, ownKey) {
     if (lastSweepAt !== null && at - lastSweepAt < cfg.sweepIntervalMs) return;
     lastSweepAt = at;
-    for (const key of store.keys()) {
-      if (isExpired(store.get(key), at)) store.delete(key);
+    for (const key of await store.keys()) {
+      if (key === ownKey) continue;
+      await enqueue(key, async () => {
+        if (isExpired(await store.get(key), at)) await store.delete(key);
+      });
     }
   }
 
-  function load(key, at, commandName) {
-    let record = store.get(key);
+  async function load(key, at, commandName) {
+    let record = await store.get(key);
     if (isExpired(record, at)) {
-      store.delete(key);
+      await store.delete(key);
       record = null;
     }
     return {
@@ -71,31 +87,36 @@ export function createConversation({ store, generate, now = Date.now, ...tunable
   }
 
   function reset(scope) {
-    store.delete(keyFor(scope));
-    return { kind: "reset" };
+    const key = keyFor(scope);
+    return enqueue(key, async () => {
+      await store.delete(key);
+      return { kind: "reset" };
+    });
   }
 
   async function respond({ scope, speaker, text, persona, context }) {
     if (text.toLowerCase() === "reset") return reset(scope);
     const userText = text === "" ? `Halo, ${titleCase(scope.commandName)}!` : text;
     const key = keyFor(scope);
-    const at = now();
-    sweepIfDue(at);
-    const conversation = load(key, at, scope.commandName);
+    return enqueue(key, async () => {
+      const at = now();
+      await sweepIfDue(at, key);
+      const conversation = await load(key, at, scope.commandName);
 
-    const memberTurn = { role: "user", text: `from ${speaker}: ${userText}` };
-    const { text: reply } = await generate({
-      ...context,
-      turns: [...conversation.recent.slice(-cfg.promptTurns), memberTurn],
-      systemInstruction: buildSystemInstruction(persona, conversation.summary),
+      const memberTurn = { role: "user", text: `from ${speaker}: ${userText}` };
+      const { text: reply } = await generate({
+        ...context,
+        turns: [...conversation.recent.slice(-cfg.promptTurns), memberTurn],
+        systemInstruction: buildSystemInstruction(persona, conversation.summary),
+      });
+
+      const recent = [...conversation.recent, memberTurn, { role: "model", text: reply }].slice(
+        -cfg.recentWindow,
+      );
+      const summary = recent.length >= cfg.summaryThreshold ? summarize(recent) : "";
+      await store.put(key, { recent, summary, lastActive: at });
+      return { kind: "reply", text: reply };
     });
-
-    const recent = [...conversation.recent, memberTurn, { role: "model", text: reply }].slice(
-      -cfg.recentWindow,
-    );
-    const summary = recent.length >= cfg.summaryThreshold ? summarize(recent) : "";
-    store.put(key, { recent, summary, lastActive: at });
-    return { kind: "reply", text: reply };
   }
 
   return { respond, reset };

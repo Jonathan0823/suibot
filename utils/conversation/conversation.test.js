@@ -1,9 +1,5 @@
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { createConversation } from "./conversation.js";
-import { createFileStore } from "./fileStore.js";
 import { createMemoryStore } from "./memoryStore.js";
 
 const scope = { guildId: "g1", channelId: "c1", userId: "u1", commandName: "hutao" };
@@ -79,7 +75,7 @@ describe("Conversation", () => {
     const { conversation, make, store, calls } = setup();
     await say(conversation, "hi");
     expect(await say(conversation, "ReSeT")).toEqual({ kind: "reset" });
-    expect(store.keys()).toEqual([]);
+    expect(await store.keys()).toEqual([]);
     await say(make(), "hello");
     expect(calls.at(-1).turns).toEqual([{ role: "user", text: "from Alice: hello" }]);
   });
@@ -88,7 +84,7 @@ describe("Conversation", () => {
     const { conversation, store, calls } = setup();
     await say(conversation, "hi");
     expect(await conversation.reset(scope)).toEqual({ kind: "reset" });
-    expect(store.keys()).toEqual([]);
+    expect(await store.keys()).toEqual([]);
     await say(conversation, "hello");
     expect(calls.at(-1).turns).toEqual([{ role: "user", text: "from Alice: hello" }]);
   });
@@ -122,11 +118,11 @@ describe("Conversation", () => {
     const store = createMemoryStore();
     const ok = setup({ store, replies: ["boo!"] });
     await say(ok.conversation, "hi");
-    const before = store.get(store.keys()[0]);
+    const before = await store.get((await store.keys())[0]);
     const boom = new Error("all providers failed");
     const bad = setup({ store, failWith: boom });
     await expect(say(bad.conversation, "again")).rejects.toBe(boom);
-    expect(store.get(store.keys()[0])).toEqual(before);
+    expect(await store.get((await store.keys())[0])).toEqual(before);
     const next = setup({ store });
     await say(next.conversation, "later");
     expect(texts(next.calls[0])).toEqual([
@@ -153,7 +149,7 @@ describe("Conversation", () => {
   it("stores each Turn once, in the form it was sent", async () => {
     const { conversation, store } = setup({ replies: ["boo!"] });
     await say(conversation, "hi");
-    expect(store.get("g1:c1:u1:hutao").recent).toEqual([
+    expect((await store.get("g1:c1:u1:hutao")).recent).toEqual([
       { role: "user", text: "from Alice: hi" },
       { role: "model", text: "boo!" },
     ]);
@@ -162,7 +158,69 @@ describe("Conversation", () => {
   it("writes no fact entries", async () => {
     const { conversation, store } = setup();
     await say(conversation, "my name is Alice, remember that I prefer tea and also don't forget");
-    expect(store.keys()).toHaveLength(1);
+    expect(await store.keys()).toHaveLength(1);
+  });
+});
+
+describe("Conversation queue", () => {
+  it("handles two quick messages from one member one after the other, the second seeing the first's Turns", async () => {
+    const calls = [];
+    let release;
+    const gate = new Promise((resolve) => {
+      release = resolve;
+    });
+    const generate = async (request) => {
+      calls.push(request);
+      if (calls.length === 1) await gate;
+      return { text: `reply ${calls.length}`, usage: null };
+    };
+    const conversation = createConversation({ store: createMemoryStore(), generate });
+
+    const first = say(conversation, "one");
+    const second = say(conversation, "two");
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(calls).toHaveLength(1);
+    release();
+    await Promise.all([first, second]);
+
+    expect(texts(calls[1])).toEqual([
+      "user: from Alice: one",
+      "model: reply 1",
+      "user: from Alice: two",
+    ]);
+  });
+
+  it("keeps running the queue after a failed operation", async () => {
+    let n = 0;
+    const generate = async () => {
+      if (n++ === 0) throw new Error("boom");
+      return { text: "ok", usage: null };
+    };
+    const conversation = createConversation({ store: createMemoryStore(), generate });
+    const failed = expect(say(conversation, "one")).rejects.toThrow("boom");
+    const next = say(conversation, "two");
+    await failed;
+    await expect(next).resolves.toEqual({ kind: "reply", text: "ok" });
+  });
+
+  it("runs different Conversations at the same time", async () => {
+    let started = 0;
+    let release;
+    const gate = new Promise((resolve) => {
+      release = resolve;
+    });
+    const generate = async () => {
+      started++;
+      await gate;
+      return { text: "ok", usage: null };
+    };
+    const conversation = createConversation({ store: createMemoryStore(), generate });
+    const a = say(conversation, "a");
+    const b = say(conversation, "b", { scope: { ...scope, userId: "u2" } });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(started).toBe(2);
+    release();
+    await Promise.all([a, b]);
   });
 });
 
@@ -185,10 +243,10 @@ describe("Conversation idle expiry", () => {
     const { clock, store, conversation } = clockSetup();
     clock.t = 5_000;
     await say(conversation, "hi");
-    expect(store.get(key).lastActive).toBe(5_000);
+    expect((await store.get(key)).lastActive).toBe(5_000);
     clock.t = 9_000;
     await say(conversation, "again");
-    expect(store.get(key).lastActive).toBe(9_000);
+    expect((await store.get(key)).lastActive).toBe(9_000);
   });
 
   it("starts empty when idle for more than 24 hours, and replaces the old record", async () => {
@@ -198,7 +256,7 @@ describe("Conversation idle expiry", () => {
     await say(conversation, "again");
     expect(calls[1].turns).toEqual([{ role: "user", text: "from Alice: again" }]);
     expect(calls[1].systemInstruction).not.toContain("[Session Summary]");
-    expect(store.get(key).recent).toHaveLength(2);
+    expect((await store.get(key)).recent).toHaveLength(2);
   });
 
   it("still remembers a conversation idle for exactly 24 hours", async () => {
@@ -225,7 +283,7 @@ describe("Conversation idle expiry", () => {
     await say(conversation, "hi");
     clock.t = 90000000;
     await say(conversation, "other", { scope: { ...scope, commandName: "firefly" } });
-    expect(store.keys()).toEqual(["g1:c1:u1:firefly"]);
+    expect(await store.keys()).toEqual(["g1:c1:u1:firefly"]);
   });
 
   it("runs the sweep at most once per hour of injected-clock time", async () => {
@@ -236,15 +294,15 @@ describe("Conversation idle expiry", () => {
     await say(conversation, "s", { scope: other("firefly") }); // sweep runs, nothing expired yet
     clock.t = 86400001;
     await say(conversation, "t", { scope: other("yukinon") }); // expired, but last sweep was 30 min ago
-    expect(store.keys()).toContain(key);
+    expect(await store.keys()).toContain(key);
     clock.t = 90000001;
     await say(conversation, "u", { scope: other("nahida") }); // an hour has passed: sweep
-    expect(store.keys()).not.toContain(key);
+    expect(await store.keys()).not.toContain(key);
   });
 
   it("never expires a record without a last-active time; its next turn sets one", async () => {
     const { clock, store, calls, conversation } = clockSetup();
-    store.put(key, {
+    await store.put(key, {
       recent: [
         { role: "user", text: "from Alice: hi" },
         { role: "model", text: "boo!" },
@@ -258,48 +316,7 @@ describe("Conversation idle expiry", () => {
       "model: boo!",
       "user: from Alice: later",
     ]);
-    expect(store.get(key).lastActive).toBe(86400000000);
-  });
-
-  it("does not expire a legacy file record without a timestamp; its next turn sets one", async () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "conversation-legacy-"));
-    try {
-      const file = path.join(dir, "memory.json");
-      fs.writeFileSync(
-        file,
-        JSON.stringify({
-          [key]: {
-            recent: [
-              { role: "user", text: "from Alice: hi" },
-              { role: "model", text: "boo!" },
-            ],
-            summary: "",
-          },
-        }),
-      );
-      const store = createFileStore({ storagePath: file });
-      const calls = [];
-      const generate = async (request) => {
-        calls.push(request);
-        return { text: "boo!", usage: null };
-      };
-      const conversation = createConversation({
-        store,
-        generate,
-        now: () => 86400000000,
-      });
-
-      await say(conversation, "later");
-
-      expect(texts(calls[0])).toEqual([
-        "user: from Alice: hi",
-        "model: boo!",
-        "user: from Alice: later",
-      ]);
-      expect(store.get(key).lastActive).toBe(86400000000);
-    } finally {
-      fs.rmSync(dir, { recursive: true, force: true });
-    }
+    expect((await store.get(key)).lastActive).toBe(86400000000);
   });
 
   it("uses tunable idle expiry and sweep interval", async () => {
