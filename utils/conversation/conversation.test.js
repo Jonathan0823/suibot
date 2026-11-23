@@ -248,7 +248,7 @@ describe("Conversation idle expiry", () => {
     clock.t = 86400000 + 1;
     await say(conversation, "again");
     expect(calls[1].turns).toEqual([{ role: "user", text: "from Alice: again" }]);
-    expect(calls[1].systemInstruction).not.toContain("[Session Summary]");
+    expect(calls[1].systemInstruction).not.toContain("[Summary]");
     expect((await store.get(key)).recent).toHaveLength(2);
   });
 
@@ -423,7 +423,8 @@ describe("Conversation compaction", () => {
     const { conversation, replies } = compactionSetup();
     await exchanges(conversation, 8);
     await say(conversation, "next");
-    expect(replies().at(-1).systemInstruction).toContain(SUMMARY);
+    expect(replies().at(-1).systemInstruction).toContain(`[Summary] ${SUMMARY}`);
+    expect(replies().at(-1).systemInstruction).not.toContain("Session Summary");
   });
 
   it("corrects the estimate with the provider-reported prompt tokens", async () => {

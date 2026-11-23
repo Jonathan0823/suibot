@@ -94,7 +94,7 @@ export function createConversation({
 
   function buildSystemInstruction(persona, summary) {
     const base = `${persona} ${RULES}`;
-    return summary ? `${base}\n\n[Session Summary] ${summary}` : base;
+    return summary ? `${base}\n\n[Summary] ${summary}` : base;
   }
 
   const tokensOf = (key, summary, turns) =>
