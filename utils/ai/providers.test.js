@@ -225,10 +225,11 @@ describe("AI failure alerts", () => {
 
   it("alerts once when every provider fails, with sanitised text", async () => {
     const providers = [openAiProvider("first"), openAiProvider("second", 2)];
+    const rawBody = "RAW_UPSTREAM_BODY_7f3a";
     const fetchImpl = vi
       .fn()
-      .mockResolvedValueOnce({ ok: false, status: 429 })
-      .mockResolvedValueOnce({ ok: false, status: 500 });
+      .mockResolvedValueOnce({ ok: false, status: 429, text: async () => rawBody })
+      .mockResolvedValueOnce({ ok: false, status: 500, text: async () => rawBody });
     const { service, alert } = serviceFor(providers, { fetchImpl });
 
     await expect(service.generate(request)).rejects.toBeInstanceOf(AiGenerationError);
@@ -238,9 +239,9 @@ describe("AI failure alerts", () => {
     expect(channelId).toBe("ops-1");
     expect(text).toContain("yukinon");
     expect(text).toContain("request-1");
-    expect(text).toContain("first (first-model)");
     expect(text).toContain("first (first-model) status 429");
     expect(text).toContain("second (second-model) status 500");
+    expect(text).not.toContain(rawBody);
     expect(text).not.toContain("secret question");
     expect(text).not.toContain("first-key");
     expect(text).not.toContain("second-key");
