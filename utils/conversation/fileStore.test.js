@@ -146,4 +146,14 @@ describe("file conversation store", () => {
     expect(loaded.lastActive).toBeUndefined();
   });
 
+  it("does not write the file when deleting a key that is absent", () => {
+    const store = createFileStore({ storagePath: file });
+    store.put("k", record());
+    const write = vi.spyOn(fs, "writeFileSync");
+
+    store.delete("missing");
+
+    expect(write).not.toHaveBeenCalled();
+    expect(readFile()).toEqual({ k: record() });
+  });
 });

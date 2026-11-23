@@ -84,7 +84,9 @@ export function createFileStore({ storagePath = DEFAULT_STORAGE_PATH } = {}) {
       save();
     },
     delete(key) {
-      delete load()[key];
+      const all = load();
+      if (!Object.hasOwn(all, key)) return;
+      delete all[key];
       save();
     },
     keys() {
