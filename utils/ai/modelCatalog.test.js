@@ -15,7 +15,11 @@ const jsonResponse = (body, ok = true) => ({ ok, status: ok ? 200 : 500, json: a
 
 describe("filterModelIds", () => {
   it("matches anywhere, ignoring case, capped at 25, free models first", () => {
-    const ids = ["a/Paid-Flash", "b/flash:free", ...Array.from({ length: 40 }, (_, i) => `flash-${i}`)];
+    const ids = [
+      "a/Paid-Flash",
+      "b/flash:free",
+      ...Array.from({ length: 40 }, (_, i) => `flash-${i}`),
+    ];
     const out = filterModelIds(ids, "FLASH");
     expect(out).toHaveLength(25);
     expect(out[0]).toBe("b/flash:free");
@@ -36,7 +40,9 @@ describe("model catalog", () => {
   });
 
   it("lists OpenAI-compatible models from {baseUrl}/models with a bearer key", async () => {
-    const fetchImpl = vi.fn(async () => jsonResponse({ data: [{ id: "x/one" }, { id: "x/two:free" }] }));
+    const fetchImpl = vi.fn(async () =>
+      jsonResponse({ data: [{ id: "x/one" }, { id: "x/two:free" }] }),
+    );
     const catalog = createModelCatalog({ fetchImpl });
     const out = await catalog.listModels({
       type: "openai-compatible",

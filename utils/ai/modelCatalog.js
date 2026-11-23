@@ -17,7 +17,10 @@ export function filterModelIds(ids, query, limit = MAX_SUGGESTIONS) {
 function getModelsUrl(baseUrl) {
   const url = new URL(baseUrl);
   if (!/^https?:$/.test(url.protocol)) throw new Error("unsupported protocol");
-  const normalized = url.toString().replace(/\/$/, "").replace(/\/chat\/completions$/, "");
+  const normalized = url
+    .toString()
+    .replace(/\/$/, "")
+    .replace(/\/chat\/completions$/, "");
   return `${normalized}/models`;
 }
 
