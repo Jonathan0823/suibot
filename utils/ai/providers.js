@@ -108,12 +108,13 @@ function mergeTurns(turns) {
   return merged;
 }
 
+// null when the arguments are not a JSON object.
 function parseJsonObject(text) {
   try {
     const value = JSON.parse(text || "{}");
-    return value && typeof value === "object" ? value : {};
+    return value && typeof value === "object" && !Array.isArray(value) ? value : null;
   } catch {
-    return {};
+    return null;
   }
 }
 
@@ -216,29 +217,25 @@ export async function generateWithOpenAiCompatible(
   }
 
   const message = data?.choices?.[0]?.message;
-  const toolCalls = (message?.tool_calls ?? []).map((call) => ({
-    id: call.id,
-    name: call.function?.name,
-    args: parseJsonObject(call.function?.arguments),
-  }));
-  const text = getTextContent(message?.content);
-  if (toolCalls.length) {
+  const toolCalls = (message?.tool_calls ?? []).map((call) => {
+    const args = parseJsonObject(call.function?.arguments);
     return {
-      text,
-      toolCalls,
-      usage: toUsage(data?.usage?.prompt_tokens, data?.usage?.completion_tokens),
+      id: call.id,
+      name: call.function?.name,
+      args: args ?? {},
+      ...(args ? {} : { invalidArgs: true }),
     };
-  }
+  });
+  const usage = toUsage(data?.usage?.prompt_tokens, data?.usage?.completion_tokens);
+  const text = getTextContent(message?.content);
+  if (toolCalls.length) return { text, toolCalls, usage };
   if (!text) {
     throw new AiProviderError("AI provider returned no text", {
       errorType: "invalid_response",
       fallback: true,
     });
   }
-  return {
-    text,
-    usage: toUsage(data?.usage?.prompt_tokens, data?.usage?.completion_tokens),
-  };
+  return { text, usage };
 }
 
 export async function generateWithGemini(
@@ -306,14 +303,7 @@ export async function generateWithGemini(
     const sources = (result?.candidates?.[0]?.groundingMetadata?.groundingChunks ?? [])
       .map((chunk) => chunk?.web?.uri)
       .filter(Boolean);
-    return {
-      text,
-      ...(sources.length ? { sources } : {}),
-      usage: toUsage(
-        result?.usageMetadata?.promptTokenCount,
-        result?.usageMetadata?.candidatesTokenCount,
-      ),
-    };
+    return { text, ...(sources.length ? { sources } : {}), usage };
   } catch (error) {
     if (error instanceof AiProviderError) throw error;
     const status = Number(error?.status || error?.statusCode);

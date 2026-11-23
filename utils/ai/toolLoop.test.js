@@ -87,6 +87,20 @@ describe("tool loop", () => {
     expect(JSON.stringify(logEvent.mock.calls)).not.toContain("boom");
   });
 
+  it("does not run a Tool whose arguments were malformed and reports an error result", async () => {
+    const run = vi.fn();
+    const { generate, calls } = scripted(
+      { text: "", toolCalls: [{ id: "x", name: "echo", args: {}, invalidArgs: true }] },
+      { text: "done" },
+    );
+    const loop = createToolLoop({ generate, tools: [{ ...echoTool, run }] });
+    await loop({ turns: [{ role: "user", text: "hi" }] });
+    expect(run).not.toHaveBeenCalled();
+    expect(calls[1].toolRounds[0].results).toEqual([
+      { id: "x", name: "echo", output: "Tool error: echo received invalid arguments" },
+    ]);
+  });
+
   it("reports an unknown Tool as an error result", async () => {
     const { generate, calls } = scripted(
       { text: "", toolCalls: [{ id: "x", name: "nope", args: {} }] },

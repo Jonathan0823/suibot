@@ -369,6 +369,36 @@ describe("Tool calls through the provider adapters", () => {
     ]);
   });
 
+  it("flags malformed OpenAI-compatible tool arguments instead of passing {} silently", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        choices: [
+          {
+            message: {
+              content: null,
+              tool_calls: [
+                { id: "c1", function: { name: "get_current_time", arguments: "{oops" } },
+                { id: "c2", function: { name: "get_current_time", arguments: "" } },
+              ],
+            },
+          },
+        ],
+      }),
+    });
+    const result = await generateWithOpenAiCompatible(openAiProvider("t"), {
+      systemInstruction: "s",
+      turns: [{ role: "user", text: "time?" }],
+      toolDefs,
+      apiKey: "k",
+      fetchImpl,
+    });
+    expect(result.toolCalls).toEqual([
+      { id: "c1", name: "get_current_time", args: {}, invalidArgs: true },
+      { id: "c2", name: "get_current_time", args: {} },
+    ]);
+  });
+
   it("answers OpenAI-compatible tool calls with role tool messages", async () => {
     const fetchImpl = vi.fn().mockResolvedValue({
       ok: true,

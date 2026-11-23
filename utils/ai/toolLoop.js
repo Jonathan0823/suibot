@@ -21,11 +21,14 @@ export function createToolLoop({ generate, tools, logEvent = () => {} }) {
     let ok = true;
     try {
       const tool = tools.find((candidate) => candidate.name === call.name);
+      if (call.invalidArgs) throw Object.assign(new Error("invalid arguments"), { invalid: true });
       if (!tool) throw new Error("unknown tool");
       output = await tool.run(call.args ?? {});
     } catch (error) {
       ok = false;
-      output = `Tool error: ${call.name} failed${error?.userMessage ? ` (${error.userMessage})` : ""}`;
+      output = error?.invalid
+        ? `Tool error: ${call.name} received invalid arguments`
+        : `Tool error: ${call.name} failed${error?.userMessage ? ` (${error.userMessage})` : ""}`;
     }
     logEvent("ai_tool_use", {
       requestId,
