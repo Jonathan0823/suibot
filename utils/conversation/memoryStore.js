@@ -7,7 +7,8 @@ export function createMemoryStore() {
   return {
     get: async (key) => (records.has(key) ? structuredClone(records.get(key)) : null),
     put: async (key, record) => {
-      records.set(key, structuredClone(record));
+      const version = (records.get(key)?.version ?? 0) + 1;
+      records.set(key, { ...structuredClone(record), version });
     },
     delete: async (key) => {
       records.delete(key);

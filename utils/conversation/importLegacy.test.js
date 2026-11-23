@@ -53,6 +53,7 @@ describe("legacy Conversation import", () => {
       ],
       summary: "",
       lastActive: NOW - 1_000,
+      version: 1,
     });
     expect((await store.get("g1:c1:u2:firefly")).summary).toBe("Bob likes tea.");
     expect((await store.get("g1:c1:u3:hutao")).summary).toBe("");

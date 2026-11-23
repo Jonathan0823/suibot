@@ -15,6 +15,10 @@ const providerService = createAiProviderService({
 const conversation = createConversation({
   store: createPostgresStore({ prisma }),
   generate: (request) => providerService.generate(request),
+  logEvent: logAiEvent,
+  ...(Number(process.env.CONVERSATION_TOKEN_BUDGET) > 0
+    ? { tokenBudget: Number(process.env.CONVERSATION_TOKEN_BUDGET) }
+    : {}),
 });
 
 async function aiResponder(message, args, systemInstruction, commandName) {

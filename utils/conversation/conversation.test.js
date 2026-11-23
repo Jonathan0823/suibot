@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createConversation } from "./conversation.js";
 import { createMemoryStore } from "./memoryStore.js";
+import { estimateTokens } from "./tokens.js";
 
 const scope = { guildId: "g1", channelId: "c1", userId: "u1", commandName: "hutao" };
 
@@ -317,5 +318,200 @@ describe("Conversation idle expiry", () => {
     clock.t = 1_001;
     await say(conversation, "again");
     expect(calls[1].turns).toEqual([{ role: "user", text: "from Alice: again" }]);
+  });
+});
+
+describe("Conversation compaction", () => {
+  const key = "g1:c1:u1:hutao";
+  const BUDGET = 2000; // 80% = 1600, 40% = 800
+  const big = "x".repeat(300); // about 100 estimated tokens per Turn
+  const SUMMARY = "About the member\n- Alice likes tea";
+
+  function compactionSetup({
+    summarizer,
+    logs = [],
+    usage = null,
+    store = createMemoryStore(),
+  } = {}) {
+    const calls = [];
+    const generate = async (request) => {
+      calls.push(request);
+      if (request.googleSearch === false) {
+        return summarizer ? summarizer(request) : { text: SUMMARY, usage: null };
+      }
+      return { text: big, usage };
+    };
+    const conversation = createConversation({
+      store,
+      generate,
+      now: () => 1_000,
+      tokenBudget: BUDGET,
+      logEvent: (event, details) => logs.push({ event, details }),
+    });
+    const replies = () => calls.filter((call) => call.googleSearch !== false);
+    const summaries = () => calls.filter((call) => call.googleSearch === false);
+    return { store, calls, logs, conversation, replies, summaries };
+  }
+
+  const exchanges = async (conversation, count, extra = {}) => {
+    for (let i = 1; i <= count; i++) await say(conversation, `${i}${big}`, extra);
+    await conversation.idle();
+  };
+
+  it("does nothing while the Conversation is under 80% of the budget", async () => {
+    const { conversation, summaries, store } = compactionSetup();
+    await exchanges(conversation, 7);
+    expect(summaries()).toHaveLength(0);
+    expect((await store.get(key)).recent).toHaveLength(14);
+  });
+
+  it("folds the oldest Turns into the Summary after the reply once over 80%, down to 40% or less", async () => {
+    const { conversation, summaries, store } = compactionSetup();
+    await exchanges(conversation, 8);
+    expect(summaries()).toHaveLength(1);
+    const record = await store.get(key);
+    expect(record.summary).toBe(SUMMARY);
+    expect(record.recent).toHaveLength(6);
+    expect(record.recent[0]).toEqual({ role: "user", text: `from Alice: 6${big}` });
+    expect(record.recent.at(-1)).toEqual({ role: "model", text: big });
+    const tokens = [...record.recent, { text: record.summary }].reduce(
+      (sum, turn) => sum + estimateTokens(turn.text),
+      0,
+    );
+    expect(tokens).toBeLessThanOrEqual(BUDGET * 0.4);
+  });
+
+  it("sends the reply before compacting", async () => {
+    const order = [];
+    const { conversation } = compactionSetup({
+      summarizer: async () => {
+        order.push("summary");
+        return { text: SUMMARY, usage: null };
+      },
+    });
+    await exchanges(conversation, 7);
+    const result = await say(conversation, big);
+    order.push("reply returned");
+    await conversation.idle();
+    expect(result.kind).toBe("reply");
+    expect(order).toEqual(["reply returned", "summary"]);
+  });
+
+  it("asks the summarizer without Persona instructions or Google Search", async () => {
+    const { conversation, summaries } = compactionSetup();
+    await exchanges(conversation, 8, { context: { requestId: "r1", commandName: "hutao" } });
+    const [request] = summaries();
+    expect(request.googleSearch).toBe(false);
+    expect(request.systemInstruction).not.toContain("You are Hu Tao.");
+    for (const section of ["About the member", "Scene and running jokes", "Open threads"]) {
+      expect(request.systemInstruction).toContain(section);
+    }
+    expect(request.requestId).toBe("r1");
+    expect(request.turns[0].role).toBe("user");
+    expect(request.turns[0].text).toContain(`from Alice: 1${big}`);
+  });
+
+  it("passes the existing Summary to the next Compaction so it is updated, not rewritten", async () => {
+    const { conversation, summaries } = compactionSetup();
+    await exchanges(conversation, 8);
+    await exchanges(conversation, 6);
+    expect(summaries()).toHaveLength(2);
+    expect(summaries()[1].turns[0].text).toContain(SUMMARY);
+  });
+
+  it("puts the Summary in the system instruction of the next request", async () => {
+    const { conversation, replies } = compactionSetup();
+    await exchanges(conversation, 8);
+    await say(conversation, "next");
+    expect(replies().at(-1).systemInstruction).toContain(SUMMARY);
+  });
+
+  it("corrects the estimate with the provider-reported prompt tokens", async () => {
+    const { conversation, summaries } = compactionSetup({
+      usage: { promptTokens: 1700, outputTokens: 10 },
+    });
+    await exchanges(conversation, 5); // estimated about 1000 of 2000, reported 1700 for the prompt
+    expect(summaries().length).toBeGreaterThan(0);
+  });
+
+  it("keeps the old Summary and Turns when Compaction fails, then retries after the next reply", async () => {
+    let fail = true;
+    const { conversation, summaries, store, logs } = compactionSetup({
+      summarizer: async () => {
+        if (fail) throw new Error("down");
+        return { text: SUMMARY, usage: null };
+      },
+    });
+    await exchanges(conversation, 8);
+    const record = await store.get(key);
+    expect(record.recent).toHaveLength(16);
+    expect(record.summary).toBe("");
+    expect(logs.at(-1).details.outcome).toBe("failed");
+    fail = false;
+    await exchanges(conversation, 1);
+    expect(summaries()).toHaveLength(2);
+    expect((await store.get(key)).summary).toBe(SUMMARY);
+  });
+
+  it("drops the oldest Turns, keeping the last 6, when a failed Compaction leaves it over 100%", async () => {
+    const { conversation, store, logs } = compactionSetup({
+      summarizer: async () => {
+        throw new Error("down");
+      },
+    });
+    await exchanges(conversation, 10); // 20 Turns, about 2000 tokens
+    const record = await store.get(key);
+    expect(record.recent.length).toBeGreaterThanOrEqual(6);
+    expect(record.recent.length).toBeLessThan(20);
+    expect(record.recent[0].role).toBe("user");
+    expect(record.recent.at(-1)).toEqual({ role: "model", text: big });
+    expect(record.summary).toBe("");
+    expect(logs.at(-1).details.outcome).toBe("trimmed");
+  });
+
+  it("discards a Compaction result when the Conversation changed in the meantime", async () => {
+    const store = createMemoryStore();
+    const { conversation, logs } = compactionSetup({
+      store,
+      summarizer: async () => {
+        const record = await store.get(key);
+        await store.put(key, {
+          ...record,
+          recent: [...record.recent, { role: "user", text: "late" }],
+        });
+        return { text: SUMMARY, usage: null };
+      },
+    });
+    await exchanges(conversation, 8);
+    const record = await store.get(key);
+    expect(record.summary).toBe("");
+    expect(record.recent).toHaveLength(17);
+    expect(logs.at(-1).details.outcome).toBe("failed");
+  });
+
+  it("logs ai_compaction with counts and outcome but no content", async () => {
+    const { conversation, logs } = compactionSetup();
+    await exchanges(conversation, 8, { context: { requestId: "r1", commandName: "hutao" } });
+    const compactions = logs.filter((entry) => entry.event === "ai_compaction");
+    expect(compactions).toHaveLength(1);
+    const { details } = compactions[0];
+    expect(Object.keys(details).sort()).toEqual([
+      "commandName",
+      "outcome",
+      "requestId",
+      "tokensAfter",
+      "tokensBefore",
+      "turnsFolded",
+    ]);
+    expect(details).toMatchObject({
+      requestId: "r1",
+      commandName: "hutao",
+      turnsFolded: 10,
+      outcome: "summarized",
+    });
+    expect(details.tokensBefore).toBeGreaterThan(BUDGET * 0.8);
+    expect(details.tokensAfter).toBeLessThanOrEqual(BUDGET * 0.4);
+    expect(JSON.stringify(logs)).not.toContain("xxxxx");
+    expect(JSON.stringify(logs)).not.toContain("tea");
   });
 });
