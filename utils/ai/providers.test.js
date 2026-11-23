@@ -1,12 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { clearCredentialCache, getProviderApiKey } from "./config.js";
+import { encryptApiKey } from "./crypto.js";
 import {
   AiGenerationError,
   createAiProviderService,
   generateWithGemini,
   generateWithOpenAiCompatible,
 } from "./providers.js";
-import { clearCredentialCache, getProviderApiKey } from "./config.js";
-import { encryptApiKey } from "./crypto.js";
 
 const encryptionKey = Buffer.alloc(32, 9).toString("base64");
 
@@ -28,7 +28,7 @@ function openAiProvider(name, priority = 1) {
   };
 }
 
-function dbFor(providers) {
+function dbFor(providers, settings = null) {
   return {
     aiProvider: {
       findMany: vi.fn().mockResolvedValue(providers),
@@ -36,7 +36,7 @@ function dbFor(providers) {
       upsert: vi.fn(),
     },
     aiSettings: {
-      findUnique: vi.fn().mockResolvedValue(null),
+      findUnique: vi.fn().mockResolvedValue(settings),
     },
   };
 }
@@ -185,5 +185,166 @@ describe("provider credential cache", () => {
     expect(getProviderApiKey(provider, encryptionKey)).toBe("first-key");
     provider.updatedAt = new Date(2);
     expect(getProviderApiKey(provider, encryptionKey)).toBe("second-key");
+  });
+});
+
+describe("AI failure alerts", () => {
+  const cooldownMs = 5 * 60 * 1000;
+  const request = {
+    requestId: "request-1",
+    commandName: "yukinon",
+    systemInstruction: "system",
+    contents: "secret question",
+  };
+
+  function serviceFor(
+    providers,
+    {
+      settings = { operationsChannelId: "ops-1" },
+      fetchImpl,
+      alert = vi.fn(),
+      logEvent,
+      clock,
+    } = {},
+  ) {
+    const service = createAiProviderService({
+      db: dbFor(providers, settings),
+      encryptionKey,
+      fetchImpl,
+      alert,
+      logEvent,
+      clock,
+    });
+    return { service, alert };
+  }
+
+  function timeSource() {
+    const state = { now: 0 };
+    return { state, clock: () => state.now };
+  }
+
+  it("alerts once when every provider fails, with sanitised text", async () => {
+    const providers = [openAiProvider("first"), openAiProvider("second", 2)];
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: false, status: 429 })
+      .mockResolvedValueOnce({ ok: false, status: 500 });
+    const { service, alert } = serviceFor(providers, { fetchImpl });
+
+    await expect(service.generate(request)).rejects.toBeInstanceOf(AiGenerationError);
+
+    expect(alert).toHaveBeenCalledTimes(1);
+    const [channelId, text] = alert.mock.calls[0];
+    expect(channelId).toBe("ops-1");
+    expect(text).toContain("yukinon");
+    expect(text).toContain("request-1");
+    expect(text).toContain("first (first-model)");
+    expect(text).toContain("second (second-model)");
+    expect(text).not.toContain("secret question");
+    expect(text).not.toContain("first-key");
+    expect(text).not.toContain("second-key");
+  });
+
+  it("does not alert again inside the cooldown", async () => {
+    const { state, clock } = timeSource();
+    const fetchImpl = vi.fn().mockResolvedValue({ ok: false, status: 429 });
+    const { service, alert } = serviceFor([openAiProvider("first")], { fetchImpl, clock });
+
+    await expect(service.generate(request)).rejects.toBeInstanceOf(AiGenerationError);
+    state.now = cooldownMs - 1;
+    await expect(service.generate(request)).rejects.toBeInstanceOf(AiGenerationError);
+
+    expect(alert).toHaveBeenCalledTimes(1);
+  });
+
+  it("alerts again once the cooldown has passed", async () => {
+    const { state, clock } = timeSource();
+    const fetchImpl = vi.fn().mockResolvedValue({ ok: false, status: 429 });
+    const { service, alert } = serviceFor([openAiProvider("first")], { fetchImpl, clock });
+
+    await expect(service.generate(request)).rejects.toBeInstanceOf(AiGenerationError);
+    state.now = cooldownMs;
+    await expect(service.generate(request)).rejects.toBeInstanceOf(AiGenerationError);
+
+    expect(alert).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not alert when no operations channel is configured", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({ ok: false, status: 429 });
+    const { service, alert } = serviceFor([openAiProvider("first")], {
+      settings: null,
+      fetchImpl,
+    });
+
+    await expect(service.generate(request)).rejects.toBeInstanceOf(AiGenerationError);
+
+    expect(alert).not.toHaveBeenCalled();
+  });
+
+  it("keeps the generation error when the alert throws", async () => {
+    const logEvent = vi.fn();
+    const fetchImpl = vi.fn().mockResolvedValue({ ok: false, status: 429 });
+    const alert = vi.fn().mockRejectedValue(new Error("discord down"));
+    const { service } = serviceFor([openAiProvider("first")], { fetchImpl, alert, logEvent });
+
+    await expect(service.generate(request)).rejects.toBeInstanceOf(AiGenerationError);
+
+    expect(logEvent).toHaveBeenCalledWith(
+      "ai_alert_failed",
+      expect.objectContaining({ requestId: "request-1" }),
+    );
+  });
+
+  it("starts the cooldown even when sending the alert fails", async () => {
+    const { state, clock } = timeSource();
+    const fetchImpl = vi.fn().mockResolvedValue({ ok: false, status: 429 });
+    const alert = vi.fn().mockRejectedValue(new Error("discord down"));
+    const { service } = serviceFor([openAiProvider("first")], { fetchImpl, alert, clock });
+
+    await expect(service.generate(request)).rejects.toBeInstanceOf(AiGenerationError);
+    state.now = 1000;
+    await expect(service.generate(request)).rejects.toBeInstanceOf(AiGenerationError);
+
+    expect(alert).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not alert when a fallback provider succeeds", async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: false, status: 429 })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ choices: [{ message: { content: "fallback" } }] }),
+      });
+    const { service, alert } = serviceFor([openAiProvider("first"), openAiProvider("second", 2)], {
+      fetchImpl,
+    });
+
+    await expect(service.generate(request)).resolves.toBe("fallback");
+
+    expect(alert).not.toHaveBeenCalled();
+  });
+
+  it("alerts when a non-fallback error stops the loop early", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({ ok: false, status: 400 });
+    const { service, alert } = serviceFor([openAiProvider("first"), openAiProvider("second", 2)], {
+      fetchImpl,
+    });
+
+    await expect(service.generate(request)).rejects.toBeInstanceOf(AiGenerationError);
+
+    expect(alert).toHaveBeenCalledTimes(1);
+    const [, text] = alert.mock.calls[0];
+    expect(text).toContain("first (first-model)");
+    expect(text).not.toContain("second-model");
+  });
+
+  it("says none configured when no providers are configured", async () => {
+    const { service, alert } = serviceFor([]);
+
+    await expect(service.generate(request)).rejects.toBeInstanceOf(AiGenerationError);
+
+    expect(alert).toHaveBeenCalledTimes(1);
+    expect(alert.mock.calls[0][1]).toContain("none configured");
   });
 });
