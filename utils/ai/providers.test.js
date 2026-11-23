@@ -290,10 +290,22 @@ describe("AI failure alerts", () => {
 
     await expect(service.generate(request)).rejects.toBeInstanceOf(AiGenerationError);
 
-    expect(logEvent).toHaveBeenCalledWith(
-      "ai_alert_failed",
-      expect.objectContaining({ requestId: "request-1" }),
+    await vi.waitFor(() =>
+      expect(logEvent).toHaveBeenCalledWith(
+        "ai_alert_failed",
+        expect.objectContaining({ requestId: "request-1" }),
+      ),
     );
+  });
+
+  it("rejects with the generation error without waiting for a pending alert", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({ ok: false, status: 429 });
+    const alert = vi.fn(() => new Promise(() => {}));
+    const { service } = serviceFor([openAiProvider("first")], { fetchImpl, alert });
+
+    await expect(service.generate(request)).rejects.toBeInstanceOf(AiGenerationError);
+
+    expect(alert).toHaveBeenCalledTimes(1);
   });
 
   it("starts the cooldown even when sending the alert fails", async () => {

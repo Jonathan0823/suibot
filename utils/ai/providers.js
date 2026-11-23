@@ -281,12 +281,13 @@ export function createAiProviderService({
       }
     }
 
-    await sendFailureAlert({
+    // Fire-and-forget: the alert must not delay the user-facing generation error.
+    sendFailureAlert({
       requestId: request.requestId,
       commandName: request.commandName,
       operationsChannelId,
       attempts,
-    });
+    }).catch(() => {});
     throw new AiGenerationError(attempts);
   }
 
