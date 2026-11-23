@@ -142,3 +142,103 @@ describe("Conversation", () => {
     expect(store.keys()).toHaveLength(1);
   });
 });
+
+describe("Conversation idle expiry", () => {
+  const key = "g1:c1:u1:hutao";
+
+  function clockSetup(tunables = {}) {
+    const clock = { t: 0 };
+    const store = createMemoryStore();
+    const calls = [];
+    const generate = async (request) => {
+      calls.push(request);
+      return "boo!";
+    };
+    const make = () => createConversation({ store, generate, now: () => clock.t, ...tunables });
+    return { clock, store, calls, make, conversation: make() };
+  }
+
+  it("stamps last-active from the injected clock on every successful turn", async () => {
+    const { clock, store, conversation } = clockSetup();
+    clock.t = 5_000;
+    await say(conversation, "hi");
+    expect(store.get(key).lastActive).toBe(5_000);
+    clock.t = 9_000;
+    await say(conversation, "again");
+    expect(store.get(key).lastActive).toBe(9_000);
+  });
+
+  it("starts empty when idle for more than 24 hours, and replaces the old record", async () => {
+    const { clock, store, calls, conversation } = clockSetup();
+    await say(conversation, "hi");
+    clock.t = 86400000 + 1;
+    await say(conversation, "again");
+    expect(calls[1].contents).toBe("from Alice: again");
+    expect(calls[1].systemInstruction).not.toContain("[Session Summary]");
+    expect(store.get(key).recent).toHaveLength(2);
+  });
+
+  it("still remembers a conversation idle for exactly 24 hours", async () => {
+    const { clock, calls, conversation } = clockSetup();
+    await say(conversation, "hi");
+    clock.t = 86400000;
+    await say(conversation, "again");
+    expect(calls[1].contents).toContain("Alice: hi\nhutao: boo!");
+  });
+
+  it("expires across a simulated restart once the clock is past 24 hours", async () => {
+    const { clock, calls, make, conversation } = clockSetup();
+    await say(conversation, "hi");
+    clock.t = 82800000;
+    await say(make(), "still here");
+    expect(calls[1].contents).toContain("Alice: hi\nhutao: boo!");
+    clock.t = 172800000;
+    await say(make(), "gone");
+    expect(calls[2].contents).toBe("from Alice: gone");
+  });
+
+  it("sweeps expired records from the store on a later turn", async () => {
+    const { clock, store, conversation } = clockSetup();
+    await say(conversation, "hi");
+    clock.t = 90000000;
+    await say(conversation, "other", { scope: { ...scope, commandName: "firefly" } });
+    expect(store.keys()).toEqual(["g1:c1:u1:firefly"]);
+  });
+
+  it("runs the sweep at most once per hour of injected-clock time", async () => {
+    const { clock, store, conversation } = clockSetup();
+    const other = (commandName) => ({ ...scope, commandName });
+    await say(conversation, "r", { scope: other("hutao") }); // t=0, sweep runs
+    clock.t = 84600000;
+    await say(conversation, "s", { scope: other("firefly") }); // sweep runs, nothing expired yet
+    clock.t = 86400001;
+    await say(conversation, "t", { scope: other("yukinon") }); // expired, but last sweep was 30 min ago
+    expect(store.keys()).toContain(key);
+    clock.t = 90000001;
+    await say(conversation, "u", { scope: other("nahida") }); // an hour has passed: sweep
+    expect(store.keys()).not.toContain(key);
+  });
+
+  it("never expires a record without a last-active time; its next turn sets one", async () => {
+    const { clock, store, calls, conversation } = clockSetup();
+    store.put(key, {
+      recent: [
+        { sender: "Alice", content: "hi" },
+        { sender: "hutao", content: "boo!" },
+      ],
+      summary: "",
+    });
+    clock.t = 86400000000;
+    await say(conversation, "later");
+    expect(calls[0].contents).toContain("Alice: hi\nhutao: boo!");
+    expect(store.get(key).lastActive).toBe(86400000000);
+  });
+
+  it("uses tunable idle expiry and sweep interval", async () => {
+    const { clock, calls, conversation } = clockSetup({ idleExpiryMs: 1_000 });
+    await say(conversation, "hi");
+    clock.t = 1_001;
+    await say(conversation, "again");
+    expect(calls[1].contents).toBe("from Alice: again");
+  });
+});
