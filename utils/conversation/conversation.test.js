@@ -303,8 +303,11 @@ describe("Conversation idle expiry", () => {
     const gate = new Promise((resolve) => {
       release = resolve;
     });
-    const generate = async (request) =>
-      request.hold ? (await gate, { text: "late", usage: null }) : { text: "ok", usage: null };
+    const generate = async (request) => {
+      if (!request.hold) return { text: "ok", usage: null };
+      await gate;
+      return { text: "late", usage: null };
+    };
     const conversation = createConversation({ store, generate, now: () => clock.t });
     const other = { ...scope, commandName: "firefly" };
     await say(conversation, "first", { scope: other });
