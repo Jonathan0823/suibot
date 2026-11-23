@@ -2,22 +2,21 @@ import "dotenv/config";
 import "./server.js";
 import fs from "node:fs";
 import path from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
 import {
-  ActivityType,
   Client,
   GatewayIntentBits,
-  MessageFlagsBitField,
   REST,
   Routes,
+  ActivityType,
+  MessageFlagsBitField,
 } from "discord.js";
-import { bindAlertClient } from "./utils/ai/discordAlert.js";
 import { loadAlarmId, setupDailyAlarm, triggerAlarm } from "./utils/alarm.js";
-import { setupCodeScraperCron } from "./utils/autoCodeBroadcast.js";
-import { loadCodeChannels } from "./utils/redeemCodeChannels.js";
 import { getSong, updateSongList } from "./utils/songlist.js";
 import { loadTriggerWords, triggerWords } from "./utils/triggerWord.js";
-
+import { loadCodeChannels } from "./utils/redeemCodeChannels.js";
+import { bindAlertClient } from "./utils/ai/discordAlert.js";
+import { setupCodeScraperCron } from "./utils/autoCodeBroadcast.js";
+import { fileURLToPath, pathToFileURL } from "node:url";
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
