@@ -91,9 +91,26 @@ function getTextContent(content) {
     .join("");
 }
 
+function toUsage(promptTokens, outputTokens) {
+  const prompt = Number(promptTokens) || 0;
+  const output = Number(outputTokens) || 0;
+  if (prompt === 0 && output === 0) return null;
+  return { promptTokens: prompt, outputTokens: output };
+}
+
+function mergeTurns(turns) {
+  const merged = [];
+  for (const turn of turns ?? []) {
+    const last = merged.at(-1);
+    if (last && last.role === turn.role) last.text = `${last.text}\n\n${turn.text}`;
+    else merged.push({ role: turn.role, text: turn.text });
+  }
+  return merged;
+}
+
 export async function generateWithOpenAiCompatible(
   provider,
-  { systemInstruction, contents, apiKey, fetchImpl = fetch },
+  { systemInstruction, turns, apiKey, fetchImpl = fetch },
 ) {
   const url = getChatCompletionsUrl(provider.baseUrl);
   let response;
@@ -109,7 +126,10 @@ export async function generateWithOpenAiCompatible(
         model: provider.model,
         messages: [
           { role: "system", content: systemInstruction },
-          { role: "user", content: contents },
+          ...turns.map((turn) => ({
+            role: turn.role === "model" ? "assistant" : "user",
+            content: turn.text,
+          })),
         ],
       }),
       signal: getTimeoutSignal(),
@@ -141,31 +161,47 @@ export async function generateWithOpenAiCompatible(
       fallback: true,
     });
   }
-  return text;
+  return {
+    text,
+    usage: toUsage(data?.usage?.prompt_tokens, data?.usage?.completion_tokens),
+  };
 }
 
 export async function generateWithGemini(
   provider,
   {
     systemInstruction,
-    contents,
+    turns,
+    googleSearch = true,
     apiKey,
     geminiClientFactory = (key) => new GoogleGenAI({ apiKey: key }),
   },
 ) {
   try {
+    const merged = mergeTurns(turns);
+    if (merged[0]?.role !== "user") {
+      throw new AiProviderError("Turn list must start with a user Turn", {
+        errorType: "configuration",
+      });
+    }
     const ai = geminiClientFactory(apiKey);
     const result = await ai.models.generateContent({
       model: provider.model,
-      contents,
+      contents: merged.map((turn) => ({ role: turn.role, parts: [{ text: turn.text }] })),
       config: {
         systemInstruction,
-        tools: [{ googleSearch: {} }],
+        ...(googleSearch ? { tools: [{ googleSearch: {} }] } : {}),
       },
     });
     const text = result?.text;
     if (!text) throw new Error("Gemini returned no text");
-    return text;
+    return {
+      text,
+      usage: toUsage(
+        result?.usageMetadata?.promptTokenCount,
+        result?.usageMetadata?.candidatesTokenCount,
+      ),
+    };
   } catch (error) {
     if (error instanceof AiProviderError) throw error;
     const status = Number(error?.status || error?.statusCode);
@@ -247,7 +283,7 @@ export function createAiProviderService({
     for (const [index, provider] of providers.entries()) {
       const startedAt = clock();
       try {
-        const text = await call(provider, request);
+        const result = await call(provider, request);
         logEvent("ai_request", {
           requestId: request.requestId,
           provider: provider.name,
@@ -257,7 +293,7 @@ export function createAiProviderService({
           attempt: index + 1,
           fallback: index > 0,
         });
-        return text;
+        return result;
       } catch (error) {
         const providerError =
           error instanceof AiProviderError
@@ -299,7 +335,7 @@ export function createAiProviderService({
     const startedAt = clock();
     await call(provider, {
       systemInstruction: "Reply with the single word OK.",
-      contents: "Reply with the single word OK.",
+      turns: [{ role: "user", text: "Reply with the single word OK." }],
       ...request,
     });
     return {

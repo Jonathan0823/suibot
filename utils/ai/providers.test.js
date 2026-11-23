@@ -56,12 +56,16 @@ describe("OpenAI-compatible provider", () => {
 
     const text = await generateWithOpenAiCompatible(openAiProvider("test"), {
       systemInstruction: "Be helpful",
-      contents: "from user: hi",
+      turns: [
+        { role: "user", text: "from Alice: hi" },
+        { role: "model", text: "hello there" },
+        { role: "user", text: "from Alice: again" },
+      ],
       apiKey: "secret",
       fetchImpl,
     });
 
-    expect(text).toBe("hello");
+    expect(text).toEqual({ text: "hello", usage: null });
     expect(fetchImpl).toHaveBeenCalledWith(
       "https://example.test/v1/chat/completions",
       expect.objectContaining({
@@ -71,14 +75,35 @@ describe("OpenAI-compatible provider", () => {
     );
     expect(JSON.parse(fetchImpl.mock.calls[0][1].body).messages).toEqual([
       { role: "system", content: "Be helpful" },
-      { role: "user", content: "from user: hi" },
+      { role: "user", content: "from Alice: hi" },
+      { role: "assistant", content: "hello there" },
+      { role: "user", content: "from Alice: again" },
     ]);
+  });
+
+  it("returns token usage when reported and null when zero or missing", async () => {
+    const run = (usage) =>
+      generateWithOpenAiCompatible(openAiProvider("test"), {
+        systemInstruction: "s",
+        turns: [{ role: "user", text: "hi" }],
+        apiKey: "secret",
+        fetchImpl: vi.fn().mockResolvedValue({
+          ok: true,
+          json: async () => ({ choices: [{ message: { content: "hello" } }], usage }),
+        }),
+      });
+    expect((await run({ prompt_tokens: 12, completion_tokens: 3 })).usage).toEqual({
+      promptTokens: 12,
+      outputTokens: 3,
+    });
+    expect((await run({ prompt_tokens: 0, completion_tokens: 0 })).usage).toBeNull();
+    expect((await run(undefined)).usage).toBeNull();
   });
 
   it("supports text parts in a compatible response", async () => {
     const text = await generateWithOpenAiCompatible(openAiProvider("test"), {
       systemInstruction: "Be helpful",
-      contents: "hi",
+      turns: [{ role: "user", text: "hi" }],
       apiKey: "secret",
       fetchImpl: vi.fn().mockResolvedValue({
         ok: true,
@@ -94,7 +119,7 @@ describe("OpenAI-compatible provider", () => {
       }),
     });
 
-    expect(text).toBe("hello");
+    expect(text.text).toBe("hello");
   });
 });
 
@@ -115,10 +140,10 @@ describe("AI provider service", () => {
       requestId: "request-1",
       commandName: "test",
       systemInstruction: "system",
-      contents: "question",
+      turns: [{ role: "user", text: "question" }],
     });
 
-    expect(text).toBe("fallback");
+    expect(text.text).toBe("fallback");
     expect(fetchImpl).toHaveBeenCalledTimes(2);
   });
 
@@ -131,7 +156,7 @@ describe("AI provider service", () => {
       fetchImpl,
     });
 
-    await expect(service.generate({ contents: "question" })).rejects.toBeInstanceOf(
+    await expect(service.generate({ turns: [{ role: "user", text: "question" }] })).rejects.toBeInstanceOf(
       AiGenerationError,
     );
     expect(fetchImpl).toHaveBeenCalledTimes(1);
@@ -147,21 +172,80 @@ describe("AI provider service", () => {
       { type: "gemini", model: "gemini-model" },
       {
         systemInstruction: "system",
-        contents: "question",
+        turns: [
+          { role: "user", text: "q1" },
+          { role: "user", text: "q2" },
+          { role: "model", text: "a1" },
+          { role: "user", text: "q3" },
+        ],
         apiKey: "gemini-key",
         geminiClientFactory,
       },
     );
 
-    expect(text).toBe("gemini reply");
+    expect(text).toEqual({ text: "gemini reply", usage: null });
     expect(generateContent).toHaveBeenCalledWith({
       model: "gemini-model",
-      contents: "question",
+      contents: [
+        { role: "user", parts: [{ text: "q1\n\nq2" }] },
+        { role: "model", parts: [{ text: "a1" }] },
+        { role: "user", parts: [{ text: "q3" }] },
+      ],
       config: {
         systemInstruction: "system",
         tools: [{ googleSearch: {} }],
       },
     });
+  });
+
+  it("removes the googleSearch tool when turned off", async () => {
+    const generateContent = vi.fn().mockResolvedValue({ text: "ok" });
+    await generateWithGemini(
+      { type: "gemini", model: "gemini-model" },
+      {
+        systemInstruction: "system",
+        turns: [{ role: "user", text: "q" }],
+        googleSearch: false,
+        apiKey: "k",
+        geminiClientFactory: () => ({ models: { generateContent } }),
+      },
+    );
+    expect(generateContent.mock.calls[0][0].config).toEqual({ systemInstruction: "system" });
+  });
+
+  it("reads Gemini usageMetadata and maps zero or missing to null", async () => {
+    const run = (usageMetadata) =>
+      generateWithGemini(
+        { type: "gemini", model: "m" },
+        {
+          systemInstruction: "s",
+          turns: [{ role: "user", text: "q" }],
+          apiKey: "k",
+          geminiClientFactory: () => ({
+            models: { generateContent: vi.fn().mockResolvedValue({ text: "ok", usageMetadata }) },
+          }),
+        },
+      );
+    expect((await run({ promptTokenCount: 20, candidatesTokenCount: 5 })).usage).toEqual({
+      promptTokens: 20,
+      outputTokens: 5,
+    });
+    expect((await run({ promptTokenCount: 0, candidatesTokenCount: 0 })).usage).toBeNull();
+    expect((await run(undefined)).usage).toBeNull();
+  });
+
+  it("rejects a Gemini Turn list that does not start with a user Turn", async () => {
+    await expect(
+      generateWithGemini(
+        { type: "gemini", model: "m" },
+        {
+          systemInstruction: "s",
+          turns: [{ role: "model", text: "hi" }],
+          apiKey: "k",
+          geminiClientFactory: () => ({ models: { generateContent: vi.fn() } }),
+        },
+      ),
+    ).rejects.toMatchObject({ errorType: "configuration" });
   });
 });
 
@@ -194,7 +278,7 @@ describe("AI failure alerts", () => {
     requestId: "request-1",
     commandName: "yukinon",
     systemInstruction: "system",
-    contents: "secret question",
+    turns: [{ role: "user", text: "secret question" }],
   };
 
   function serviceFor(
@@ -334,7 +418,7 @@ describe("AI failure alerts", () => {
       fetchImpl,
     });
 
-    await expect(service.generate(request)).resolves.toBe("fallback");
+    await expect(service.generate(request)).resolves.toMatchObject({ text: "fallback" });
 
     expect(alert).not.toHaveBeenCalled();
   });
