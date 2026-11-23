@@ -239,7 +239,8 @@ describe("AI failure alerts", () => {
     expect(text).toContain("yukinon");
     expect(text).toContain("request-1");
     expect(text).toContain("first (first-model)");
-    expect(text).toContain("second (second-model)");
+    expect(text).toContain("first (first-model) status 429");
+    expect(text).toContain("second (second-model) status 500");
     expect(text).not.toContain("secret question");
     expect(text).not.toContain("first-key");
     expect(text).not.toContain("second-key");
