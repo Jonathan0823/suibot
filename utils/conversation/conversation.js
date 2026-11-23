@@ -4,6 +4,8 @@ const DEFAULTS = {
   recentWindow: 10,
   promptTurns: 8,
   summaryThreshold: 10,
+  idleExpiryMs: 24 * 60 * 60 * 1000,
+  sweepIntervalMs: 60 * 60 * 1000,
 };
 
 const RULES = [
@@ -29,9 +31,26 @@ function summarize(turns) {
  */
 export function createConversation({ store, generate, now = Date.now, ...tunables }) {
   const cfg = { ...DEFAULTS, ...tunables };
+  let lastSweepAt = null;
 
-  function load(key) {
-    const record = store.get(key);
+  function isExpired(record, at) {
+    return typeof record?.lastActive === "number" && at - record.lastActive > cfg.idleExpiryMs;
+  }
+
+  function sweepIfDue(at) {
+    if (lastSweepAt !== null && at - lastSweepAt < cfg.sweepIntervalMs) return;
+    lastSweepAt = at;
+    for (const key of store.keys()) {
+      if (isExpired(store.get(key), at)) store.delete(key);
+    }
+  }
+
+  function load(key, at) {
+    let record = store.get(key);
+    if (isExpired(record, at)) {
+      store.delete(key);
+      record = null;
+    }
     return {
       recent: record?.recent ?? [],
       summary: typeof record?.summary === "string" ? record.summary : "",
@@ -61,7 +80,9 @@ export function createConversation({ store, generate, now = Date.now, ...tunable
     if (text.toLowerCase() === "reset") return reset(scope);
     const message = text === "" ? `Halo, ${titleCase(scope.commandName)}!` : text;
     const key = keyFor(scope);
-    const conversation = load(key);
+    const at = now();
+    sweepIfDue(at);
+    const conversation = load(key, at);
 
     const reply = await generate({
       ...context,
@@ -75,7 +96,7 @@ export function createConversation({ store, generate, now = Date.now, ...tunable
       { sender: scope.commandName, content: reply },
     ].slice(-cfg.recentWindow);
     const summary = recent.length >= cfg.summaryThreshold ? summarize(recent) : "";
-    store.put(key, { recent, summary, lastActive: now() });
+    store.put(key, { recent, summary, lastActive: at });
     return { kind: "reply", text: reply };
   }
 
