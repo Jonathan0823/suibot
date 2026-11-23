@@ -162,6 +162,73 @@ describe("AI provider service", () => {
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
+  it.each([404, 410])(
+    "falls back to the next provider when the model is gone (%i)",
+    async (status) => {
+      const providers = [openAiProvider("first"), openAiProvider("second", 2)];
+      const fetchImpl = vi
+        .fn()
+        .mockResolvedValueOnce({ ok: false, status })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ choices: [{ message: { content: "fallback" } }] }),
+        });
+
+      const service = createAiProviderService({ db: dbFor(providers), encryptionKey, fetchImpl });
+      await expect(
+        service.generate({ turns: [{ role: "user", text: "question" }] }),
+      ).resolves.toMatchObject({ text: "fallback" });
+      expect(fetchImpl).toHaveBeenCalledTimes(2);
+    },
+  );
+
+  it("does not fall back on a 400 bad request", async () => {
+    const providers = [openAiProvider("first"), openAiProvider("second", 2)];
+    const fetchImpl = vi.fn().mockResolvedValue({ ok: false, status: 400 });
+    const service = createAiProviderService({ db: dbFor(providers), encryptionKey, fetchImpl });
+
+    await expect(
+      service.generate({ turns: [{ role: "user", text: "question" }] }),
+    ).rejects.toBeInstanceOf(AiGenerationError);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it("falls back to the next provider when Gemini reports a 404", async () => {
+    process.env.API_KEY = "gemini-key";
+    const gemini = {
+      id: "gemini",
+      name: "gemini",
+      type: "gemini",
+      model: "gemini-x",
+      enabled: true,
+      priority: 1,
+      createdAt: new Date(1),
+      updatedAt: new Date(1),
+    };
+    const db = dbFor([gemini, openAiProvider("second", 2)]);
+    db.aiProvider.upsert.mockResolvedValue({});
+    const generateContent = vi
+      .fn()
+      .mockRejectedValue(Object.assign(new Error("nf"), { status: 404 }));
+    const geminiClientFactory = vi.fn().mockReturnValue({ models: { generateContent } });
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ choices: [{ message: { content: "fallback" } }] }),
+    });
+
+    const service = createAiProviderService({
+      db,
+      encryptionKey,
+      fetchImpl,
+      geminiClientFactory,
+    });
+    await expect(
+      service.generate({ turns: [{ role: "user", text: "question" }] }),
+    ).resolves.toMatchObject({ text: "fallback" });
+    expect(generateContent).toHaveBeenCalledTimes(1);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
   it("uses Gemini's native adapter and search tool", async () => {
     const generateContent = vi.fn().mockResolvedValue({ text: "gemini reply" });
     const geminiClientFactory = vi.fn().mockReturnValue({
