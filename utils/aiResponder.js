@@ -29,13 +29,12 @@ const generateWithTools = createToolLoop({
     getPlayer: (game, uid) => enka[game].getPlayer(uid),
   }),
 });
+const tokenBudget = Number(process.env.CONVERSATION_TOKEN_BUDGET);
 const conversation = createConversation({
   store: createPostgresStore({ prisma }),
   generate: generateWithTools,
   logEvent: logAiEvent,
-  ...(Number(process.env.CONVERSATION_TOKEN_BUDGET) > 0
-    ? { tokenBudget: Number(process.env.CONVERSATION_TOKEN_BUDGET) }
-    : {}),
+  ...(tokenBudget > 0 ? { tokenBudget } : {}),
 });
 
 async function aiResponder(message, args, systemInstruction, commandName) {
