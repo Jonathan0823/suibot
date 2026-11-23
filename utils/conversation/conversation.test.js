@@ -95,23 +95,15 @@ describe("Conversation", () => {
     expect(calls[0].turns).toEqual([{ role: "user", text: "from Alice: Halo, Hu Tao!" }]);
   });
 
-  it("keeps a 10 turn window and prompts with the last 8", async () => {
+  it("starts each request with exactly the previous request's Turns while under budget", async () => {
     const { conversation, calls } = setup();
-    for (let i = 1; i <= 7; i++) await say(conversation, `m${i}`);
-    const turns = calls.at(-1).turns; // after 6 exchanges = 12 turns, window 10
-    expect(turns).toHaveLength(9); // 8 recent + the new message
-    expect(turns.at(-2)).toEqual({ role: "model", text: "reply 6" });
-    expect(turns[0].role).toBe("user");
-  });
-
-  it("adds a summary from the updated turns once the threshold is reached", async () => {
-    const { conversation, calls } = setup();
-    for (let i = 1; i <= 5; i++) await say(conversation, `m${i}`);
-    expect(calls.at(-1).systemInstruction).not.toContain("[Session Summary]");
-    await say(conversation, "m6"); // 5 exchanges = 10 turns were stored after m5
-    expect(calls.at(-1).systemInstruction).toContain(
-      '[Session Summary] [Previous 10 exchanges: started with "from Alice: m1..."]',
-    );
+    for (let i = 1; i <= 12; i++) await say(conversation, `m${i}`);
+    for (let n = 1; n < calls.length; n++) {
+      const previous = texts(calls[n - 1]);
+      expect(texts(calls[n]).slice(0, previous.length)).toEqual(previous);
+      expect(calls[n].systemInstruction).toBe(calls[0].systemInstruction);
+    }
+    expect(calls.at(-1).turns).toHaveLength(23); // every stored Turn plus the new message
   });
 
   it("propagates generate errors and leaves the conversation unchanged", async () => {

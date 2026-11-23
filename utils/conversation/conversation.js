@@ -106,15 +106,12 @@ export function createConversation({ store, generate, now = Date.now, ...tunable
       const memberTurn = { role: "user", text: `from ${speaker}: ${userText}` };
       const { text: reply } = await generate({
         ...context,
-        turns: [...conversation.recent.slice(-cfg.promptTurns), memberTurn],
+        turns: [...conversation.recent, memberTurn],
         systemInstruction: buildSystemInstruction(persona, conversation.summary),
       });
 
-      const recent = [...conversation.recent, memberTurn, { role: "model", text: reply }].slice(
-        -cfg.recentWindow,
-      );
-      const summary = recent.length >= cfg.summaryThreshold ? summarize(recent) : "";
-      await store.put(key, { recent, summary, lastActive: at });
+      const recent = [...conversation.recent, memberTurn, { role: "model", text: reply }];
+      await store.put(key, { recent, summary: conversation.summary, lastActive: at });
       return { kind: "reply", text: reply };
     });
   }
