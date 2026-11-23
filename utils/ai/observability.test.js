@@ -1,8 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { logAiEvent, notifyAiFailure, resetFailureAlertCooldown } from "./observability.js";
+import { logAiEvent } from "./observability.js";
 
 afterEach(() => {
-  resetFailureAlertCooldown();
   vi.restoreAllMocks();
 });
 
@@ -29,25 +28,5 @@ describe("AI observability", () => {
     expect(output.statusCode).toBe(500);
     expect(output.prompt).toBeUndefined();
     expect(output.apiKey).toBeUndefined();
-  });
-
-  it("sends sanitized all-provider failure alerts with mentions disabled", async () => {
-    const send = vi.fn();
-    const client = {
-      channels: { fetch: vi.fn().mockResolvedValue({ isTextBased: () => true, send }) },
-    };
-
-    await notifyAiFailure({
-      client,
-      channelId: "channel-1",
-      commandName: "yukinon",
-      requestId: "request-1",
-      attempts: [{ provider: "first", model: "model-1" }],
-    });
-
-    expect(send).toHaveBeenCalledWith({
-      content: expect.stringContaining("first (model-1)"),
-      allowedMentions: { parse: [] },
-    });
   });
 });

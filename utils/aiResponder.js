@@ -1,10 +1,10 @@
 import "dotenv/config";
 import getUserName from "../helper/getUserName.js";
 import splitMessage from "../helper/splitMessage.js";
+import { createRequestId, logAiEvent } from "./ai/observability.js";
+import { createAiProviderService } from "./ai/providers.js";
 import { createConversation } from "./conversation/conversation.js";
 import { createFileStore } from "./conversation/fileStore.js";
-import { createAiProviderService } from "./ai/providers.js";
-import { createRequestId, logAiEvent, notifyAiFailure } from "./ai/observability.js";
 
 const providerService = createAiProviderService({ logEvent: logAiEvent });
 const conversation = createConversation({
@@ -29,12 +29,6 @@ async function aiResponder(message, args, systemInstruction, commandName) {
       context: {
         requestId,
         commandName,
-        notifyFailure: (details) =>
-          notifyAiFailure({
-            client: message.client,
-            commandName,
-            ...details,
-          }),
       },
     });
 
