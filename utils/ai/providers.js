@@ -1,8 +1,15 @@
 import { GoogleGenAI } from "@google/genai";
-import { PROVIDER_TYPES, getProviderApiKey, loadAiConfig } from "./config.js";
 import prisma from "../../lib/prisma.js";
+import { getProviderApiKey, loadAiConfig, PROVIDER_TYPES } from "./config.js";
 
 const REQUEST_TIMEOUT_MS = 30_000;
+const ALERT_COOLDOWN_MS = 5 * 60 * 1000;
+
+function safeLabel(value, fallback = "unknown") {
+  return String(value || fallback)
+    .replace(/[\r\n`]/g, "")
+    .slice(0, 120);
+}
 
 export class AiProviderError extends Error {
   constructor(message, { status, errorType = "provider_error", fallback = false } = {}) {
@@ -192,7 +199,11 @@ export function createAiProviderService({
   fetchImpl = fetch,
   geminiClientFactory,
   logEvent = () => {},
+  alert = async () => {},
+  clock = () => Date.now(),
 } = {}) {
+  let lastAlertAt = null;
+
   async function call(provider, request) {
     validateProvider(provider);
     const apiKey = getProviderApiKey(provider, encryptionKey);
@@ -203,12 +214,38 @@ export function createAiProviderService({
     return generateWithOpenAiCompatible(provider, { ...request, apiKey, fetchImpl });
   }
 
+  async function sendFailureAlert({ requestId, commandName, operationsChannelId, attempts }) {
+    if (!operationsChannelId) return;
+
+    const now = clock();
+    if (lastAlertAt !== null && now - lastAlertAt < ALERT_COOLDOWN_MS) return;
+    lastAlertAt = now;
+
+    const providers = attempts.length
+      ? attempts
+          .map(
+            (attempt) =>
+              `${safeLabel(attempt.provider)} (${safeLabel(attempt.model)}) status ${attempt.status ?? "none"}, ${safeLabel(attempt.errorType)}`,
+          )
+          .join(", ")
+      : "none configured";
+    try {
+      await alert(
+        operationsChannelId,
+        `[AI alert] All providers failed for ${safeLabel(commandName)}. ` +
+          `Providers: ${providers}. Request: ${safeLabel(requestId)}.`,
+      );
+    } catch (error) {
+      logEvent("ai_alert_failed", { requestId, errorName: error?.name || "Error" });
+    }
+  }
+
   async function generate(request) {
     const { providers, operationsChannelId } = await loadAiConfig(db);
     const attempts = [];
 
     for (const [index, provider] of providers.entries()) {
-      const startedAt = Date.now();
+      const startedAt = clock();
       try {
         const text = await call(provider, request);
         logEvent("ai_request", {
@@ -216,7 +253,7 @@ export function createAiProviderService({
           provider: provider.name,
           model: provider.model,
           status: "success",
-          durationMs: Date.now() - startedAt,
+          durationMs: clock() - startedAt,
           attempt: index + 1,
           fallback: index > 0,
         });
@@ -232,7 +269,7 @@ export function createAiProviderService({
           status: providerError.status,
           errorType: providerError.errorType,
           fallback: providerError.fallback,
-          durationMs: Date.now() - startedAt,
+          durationMs: clock() - startedAt,
         };
         attempts.push(attempt);
         logEvent("ai_provider_failure", {
@@ -244,12 +281,13 @@ export function createAiProviderService({
       }
     }
 
-    await request.notifyFailure?.({
+    // Fire-and-forget: the alert must not delay the user-facing generation error.
+    sendFailureAlert({
       requestId: request.requestId,
       commandName: request.commandName,
       operationsChannelId,
       attempts,
-    });
+    }).catch(() => {});
     throw new AiGenerationError(attempts);
   }
 
@@ -258,7 +296,7 @@ export function createAiProviderService({
     if (!provider)
       throw new AiProviderError("Provider was not found", { errorType: "configuration" });
 
-    const startedAt = Date.now();
+    const startedAt = clock();
     await call(provider, {
       systemInstruction: "Reply with the single word OK.",
       contents: "Reply with the single word OK.",
@@ -267,7 +305,7 @@ export function createAiProviderService({
     return {
       provider: provider.name,
       model: provider.model,
-      durationMs: Date.now() - startedAt,
+      durationMs: clock() - startedAt,
     };
   }
 
