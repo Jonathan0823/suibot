@@ -22,8 +22,12 @@ afterEach(() => {
 });
 
 describe("sendOperationsAlert", () => {
-  it("does nothing and does not throw while unbound", async () => {
+  it("logs an unbound failure and does not throw while unbound", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+
     await expect(sendOperationsAlert("channel-1", "alert text")).resolves.toBeUndefined();
+
+    expect(info).toHaveBeenCalledWith(expect.stringContaining('"errorType":"unbound"'));
   });
 
   it("sends the text to a text channel with mentions disabled", async () => {

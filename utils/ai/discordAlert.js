@@ -7,7 +7,10 @@ export function bindAlertClient(client) {
 }
 
 export async function sendOperationsAlert(channelId, text) {
-  if (!alertClient) return;
+  if (!alertClient) {
+    logAiEvent("ai_alert_failed", { errorType: "unbound" });
+    return;
+  }
 
   try {
     const channel = await alertClient.channels.fetch(channelId);
