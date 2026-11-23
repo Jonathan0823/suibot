@@ -29,4 +29,23 @@ describe("AI observability", () => {
     expect(output.prompt).toBeUndefined();
     expect(output.apiKey).toBeUndefined();
   });
+
+  it("keeps the ai_compaction fields", () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    logAiEvent("ai_compaction", {
+      turnsFolded: 10,
+      tokensBefore: 1700,
+      tokensAfter: 700,
+      outcome: "summarized",
+      errorType: "Error",
+    });
+    const output = JSON.parse(info.mock.calls[0][0]);
+    expect(output).toMatchObject({
+      turnsFolded: 10,
+      tokensBefore: 1700,
+      tokensAfter: 700,
+      outcome: "summarized",
+      errorType: "Error",
+    });
+  });
 });
