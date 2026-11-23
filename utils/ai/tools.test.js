@@ -78,6 +78,31 @@ describe("get_player_showcase", () => {
     expect(out).toContain("Floor 12");
   });
 
+  it("shortens a Star Rail player to text without Genshin-only fields", async () => {
+    const getPlayer = vi.fn().mockResolvedValue({
+      uid: "800000002",
+      player: {
+        username: "Trailblazer",
+        level: 70,
+        equilibriumLevel: 60,
+        recordInfo: { achievementCount: 321 },
+      },
+    });
+    const out = await toolsWith({ getPlayer }).get_player_showcase.run({
+      game: "starrail",
+      uid: "800000002",
+    });
+    expect(getPlayer).toHaveBeenCalledWith("starrail", "800000002");
+    expect(out).toContain("Game: Honkai Star Rail");
+    expect(out).toContain("Name: Trailblazer");
+    expect(out).toContain("UID: 800000002");
+    expect(out).toContain("Trailblazer Level: 70");
+    expect(out).toContain("Equilibrium Level: 60");
+    expect(out).toContain("Achievements: 321");
+    expect(out).not.toContain("Adventure Rank");
+    expect(out).not.toContain("World Level");
+  });
+
   it("rejects an unknown game", async () => {
     await expect(toolsWith().get_player_showcase.run({ game: "zzz", uid: "1" })).rejects.toThrow();
   });

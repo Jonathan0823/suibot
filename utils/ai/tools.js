@@ -22,8 +22,18 @@ function formatJakartaTime(date) {
 
 function summarizePlayer(game, response) {
   const player = response?.player ?? {};
+  if (game === "starrail") {
+    return [
+      "Game: Honkai Star Rail",
+      `Name: ${player.username}`,
+      `UID: ${response?.uid}`,
+      `Trailblazer Level: ${player.level}`,
+      `Equilibrium Level: ${player.equilibriumLevel}`,
+      `Achievements: ${player.recordInfo?.achievementCount}`,
+    ].join("\n");
+  }
   const lines = [
-    `Game: ${game === "genshin" ? "Genshin Impact" : "Honkai Star Rail"}`,
+    "Game: Genshin Impact",
     `Name: ${player.username}`,
     `UID: ${response?.uid}`,
     `World Level: ${player.levels?.world}`,
