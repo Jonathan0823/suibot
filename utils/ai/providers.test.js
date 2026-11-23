@@ -303,6 +303,51 @@ describe("Tool calls through the provider adapters", () => {
     expect(JSON.stringify(config)).not.toContain("googleSearch");
   });
 
+  it("marks a Gemini functionCall without a thoughtSignature with the skip sentinel", async () => {
+    const generateContent = vi.fn().mockResolvedValue({ text: "It is noon" });
+    await generateWithGemini(
+      { type: "gemini", model: "m" },
+      {
+        systemInstruction: "s",
+        turns: [{ role: "user", text: "what time is it" }],
+        toolDefs,
+        toolRounds: rounds,
+        apiKey: "k",
+        geminiClientFactory: () => ({ models: { generateContent } }),
+      },
+    );
+    expect(generateContent.mock.calls[0][0].contents[1].parts).toEqual([
+      {
+        functionCall: { name: "get_current_time", args: {} },
+        thoughtSignature: "skip_thought_signature_validator",
+      },
+    ]);
+  });
+
+  it("keeps a real Gemini thoughtSignature on a replayed functionCall", async () => {
+    const generateContent = vi.fn().mockResolvedValue({ text: "It is noon" });
+    const signedRounds = [
+      {
+        calls: [{ id: "c1", name: "get_current_time", args: {}, thoughtSignature: "real-sig" }],
+        results: [{ id: "c1", name: "get_current_time", output: "12:00" }],
+      },
+    ];
+    await generateWithGemini(
+      { type: "gemini", model: "m" },
+      {
+        systemInstruction: "s",
+        turns: [{ role: "user", text: "what time is it" }],
+        toolDefs,
+        toolRounds: signedRounds,
+        apiKey: "k",
+        geminiClientFactory: () => ({ models: { generateContent } }),
+      },
+    );
+    expect(generateContent.mock.calls[0][0].contents[1].parts).toEqual([
+      { functionCall: { name: "get_current_time", args: {} }, thoughtSignature: "real-sig" },
+    ]);
+  });
+
   it("answers Gemini function calls with functionResponse parts", async () => {
     const generateContent = vi.fn().mockResolvedValue({ text: "It is noon" });
     await generateWithGemini(
@@ -317,7 +362,15 @@ describe("Tool calls through the provider adapters", () => {
       },
     );
     expect(generateContent.mock.calls[0][0].contents.slice(1)).toEqual([
-      { role: "model", parts: [{ functionCall: { name: "get_current_time", args: {} } }] },
+      {
+        role: "model",
+        parts: [
+          {
+            functionCall: { name: "get_current_time", args: {} },
+            thoughtSignature: "skip_thought_signature_validator",
+          },
+        ],
+      },
       {
         role: "user",
         parts: [

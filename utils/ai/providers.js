@@ -145,7 +145,10 @@ function geminiToolContents(toolRounds) {
       role: "model",
       parts: round.calls.map((call) => ({
         functionCall: { name: call.name, args: call.args ?? {} },
-        ...(call.thoughtSignature ? { thoughtSignature: call.thoughtSignature } : {}),
+        // Gemini 3+ rejects a functionCall without a signature. Calls from another
+        // provider (e.g. OpenAI-compatible, before a fallback) have none, so use Google's
+        // documented sentinel as a last resort. It may lower quality; real signatures are kept.
+        thoughtSignature: call.thoughtSignature || "skip_thought_signature_validator",
       })),
     },
     {
