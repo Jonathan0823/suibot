@@ -61,7 +61,20 @@ describe("sendOperationsAlert", () => {
 
     await expect(sendOperationsAlert("channel-1", "alert text")).resolves.toBeUndefined();
 
-    expect(info).toHaveBeenCalledWith(expect.stringContaining("ai_alert_failed"));
+    expect(info).toHaveBeenCalledWith(expect.stringContaining('"errorType":"channel"'));
+  });
+
+  it("logs and swallows a channel fetch rejection", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    const client = {
+      channels: { fetch: vi.fn().mockRejectedValue(new Error("unknown channel")) },
+    };
+    bindAlertClient(client);
+
+    await expect(sendOperationsAlert("channel-1", "alert text")).resolves.toBeUndefined();
+
+    expect(info).toHaveBeenCalledWith(expect.stringContaining('"errorType":"discord"'));
+    expect(info).toHaveBeenCalledWith(expect.stringContaining("unknown channel"));
   });
 
   it("logs and swallows a Discord send error", async () => {
