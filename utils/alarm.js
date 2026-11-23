@@ -1,4 +1,9 @@
-import { EmbedBuilder, ButtonBuilder, ButtonStyle, ActionRowBuilder } from "discord.js";
+import {
+  EmbedBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  ActionRowBuilder,
+} from "discord.js";
 import cron from "node-cron";
 import getRandomColor from "../helper/randomColor.js";
 import prisma from "../lib/prisma.js";
@@ -21,7 +26,9 @@ const loadAlarmId = async () => {
 };
 
 function setupDailyAlarm(client, type) {
-  console.log("Setting up daily alarm for " + channelId + " with type: " + type);
+  console.log(
+    "Setting up daily alarm for " + channelId + " with type: " + type,
+  );
 
   if (scheduledJobs[type]) {
     scheduledJobs[type].stop();
@@ -54,7 +61,9 @@ async function firstDayOfMonthAlarm(client, channelIds) {
       try {
         const channel = await client.channels.fetch(id);
         if (channel) {
-          channel.send("https://media.tenor.com/1aFbnAIg-n8AAAAM/wake-up-first-day.gif");
+          channel.send(
+            "https://media.tenor.com/1aFbnAIg-n8AAAAM/wake-up-first-day.gif",
+          );
         }
       } catch (err) {
         console.error("Error sending first day of month alarm:", err);
@@ -98,7 +107,9 @@ function buildHoyoEmbed(color) {
   return new EmbedBuilder()
     .setColor(color)
     .setTitle("Check In Yuk!")
-    .setDescription("Pagii!! Jangan lupa sarapan dan check-in Hoyolab kamu ya~ 🍞☕")
+    .setDescription(
+      "Pagii!! Jangan lupa sarapan dan check-in Hoyolab kamu ya~ 🍞☕",
+    )
     .setThumbnail(
       "https://play-lh.googleusercontent.com/azVwh1OazZcsq6ocxOzH4mccFgs3IP0-RTxlFsoIumIO28RbmNx2YP7PEsqNAyY0ck0=w240-h480-rw",
     )
@@ -139,10 +150,15 @@ async function sendAlarmToChannel(channel, type) {
         await channel.send({ embeds: [embed] });
       }
       success = true;
-      console.log(`Alarm sent successfully! (retry = ${attempts}, clientId = ${channel.id})`);
+      console.log(
+        `Alarm sent successfully! (retry = ${attempts}, clientId = ${channel.id})`,
+      );
     } catch (error) {
       attempts++;
-      console.log(`Error sending alarm (attempt ${attempts}/${maxRetries}):`, error);
+      console.log(
+        `Error sending alarm (attempt ${attempts}/${maxRetries}):`,
+        error,
+      );
 
       if (attempts >= maxRetries) {
         console.log("Failed to send alarm after maximum retries.");
