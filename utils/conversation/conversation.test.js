@@ -17,6 +17,9 @@ function setup({ store = createMemoryStore(), replies = [], failWith } = {}) {
   return { store, calls, conversation: make(), make };
 }
 
+// Background work (Compaction, idle sweep) only awaits already-resolved promises: one macrotask drains it.
+const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+
 const texts = (call) => call.turns.map((turn) => `${turn.role}: ${turn.text}`);
 
 const say = (conversation, text, extra = {}) =>
@@ -276,6 +279,7 @@ describe("Conversation idle expiry", () => {
     await say(conversation, "hi");
     clock.t = 90000000;
     await say(conversation, "other", { scope: { ...scope, commandName: "firefly" } });
+    await settle();
     expect(await store.keys()).toEqual(["g1:c1:u1:firefly"]);
   });
 
@@ -291,6 +295,61 @@ describe("Conversation idle expiry", () => {
     clock.t = 90000001;
     await say(conversation, "u", { scope: other("nahida") }); // an hour has passed: sweep
     expect(await store.keys()).not.toContain(key);
+  });
+
+  it("does not make a reply wait on another Conversation's queue", async () => {
+    const { clock, conversation: _unused, store } = clockSetup();
+    let release;
+    const gate = new Promise((resolve) => {
+      release = resolve;
+    });
+    const generate = async (request) =>
+      request.hold ? (await gate, { text: "late", usage: null }) : { text: "ok", usage: null };
+    const conversation = createConversation({ store, generate, now: () => clock.t });
+    const other = { ...scope, commandName: "firefly" };
+    await say(conversation, "first", { scope: other });
+    await settle();
+    clock.t = 100;
+    const held = say(conversation, "slow", { scope: other, context: { hold: true } });
+    await settle();
+    clock.t = 90_000_000;
+    const reply = await Promise.race([
+      say(conversation, "fast"),
+      new Promise((resolve) => setTimeout(() => resolve("blocked"), 200)),
+    ]);
+    expect(reply).toEqual({ kind: "reply", text: "ok" });
+    release();
+    await held;
+    await settle();
+  });
+
+  it("still replies when the sweep fails, logs it, and retries the sweep on the next turn", async () => {
+    const { clock, store } = clockSetup();
+    const logs = [];
+    const generate = async () => ({ text: "boo!", usage: null });
+    const conversation = createConversation({
+      store,
+      generate,
+      now: () => clock.t,
+      logEvent: (event, details) => logs.push({ event, details }),
+    });
+    await say(conversation, "old", { scope: { ...scope, commandName: "firefly" } });
+    await settle();
+    clock.t = 90_000_000;
+    const realKeys = store.keys;
+    store.keys = async () => {
+      throw Object.assign(new Error("db down"), { name: "DbError" });
+    };
+    expect(await say(conversation, "hi")).toEqual({ kind: "reply", text: "boo!" });
+    await settle();
+    expect(logs.find((entry) => entry.event === "ai_sweep_failed").details).toEqual({
+      errorType: "DbError",
+    });
+    store.keys = realKeys;
+    clock.t = 90_000_001; // inside the sweep interval of the failed sweep
+    await say(conversation, "again");
+    await settle();
+    expect(await store.keys()).not.toContain("g1:c1:u1:firefly");
   });
 
   it("never expires a record without a last-active time; its next turn sets one", async () => {
@@ -328,6 +387,7 @@ describe("Conversation compaction", () => {
   const SUMMARY = "About the member\n- Alice likes tea";
 
   function compactionSetup({
+    tokenBudget = BUDGET,
     summarizer,
     logs = [],
     usage = null,
@@ -345,7 +405,7 @@ describe("Conversation compaction", () => {
       store,
       generate,
       now: () => 1_000,
-      tokenBudget: BUDGET,
+      tokenBudget,
       logEvent: (event, details) => logs.push({ event, details }),
     });
     const replies = () => calls.filter((call) => call.googleSearch !== false);
@@ -355,7 +415,7 @@ describe("Conversation compaction", () => {
 
   const exchanges = async (conversation, count, extra = {}) => {
     for (let i = 1; i <= count; i++) await say(conversation, `${i}${big}`, extra);
-    await conversation.idle();
+    await settle();
   };
 
   it("does nothing while the Conversation is under 80% of the budget", async () => {
@@ -392,7 +452,7 @@ describe("Conversation compaction", () => {
     await exchanges(conversation, 7);
     const result = await say(conversation, big);
     order.push("reply returned");
-    await conversation.idle();
+    await settle();
     expect(result.kind).toBe("reply");
     expect(order).toEqual(["reply returned", "summary"]);
   });
@@ -488,6 +548,84 @@ describe("Conversation compaction", () => {
     expect(record.summary).toBe("");
     expect(record.recent).toHaveLength(17);
     expect(logs.at(-1).details.outcome).toBe("failed");
+  });
+
+  it("sizes the fold so the new Summary at its cap plus the kept Turns fit in 40%", async () => {
+    const { conversation, store, summaries } = compactionSetup({ tokenBudget: 6000 }); // 40% = 2400
+    for (let i = 1; summaries().length === 0 && i <= 40; i++) {
+      await say(conversation, `${i}${big}`);
+      await settle();
+    }
+    const record = await store.get(key);
+    expect(record.summary).toBe(SUMMARY);
+    const kept = record.recent.reduce((sum, turn) => sum + estimateTokens(turn.text), 0);
+    expect(kept + 1000).toBeLessThanOrEqual(6000 * 0.4);
+    expect(record.recent.length).toBeGreaterThanOrEqual(6);
+  });
+
+  it("keeps compacting when the oldest side has no member Turn boundary within reach", async () => {
+    const store = createMemoryStore();
+    const model = (n) => ({ role: "model", text: `m${n}${big}` });
+    const recent = [{ role: "user", text: `u0${big}` }];
+    for (let i = 1; i <= 12; i++) recent.push(model(i));
+    recent.push({ role: "user", text: `u13${big}` }, model(14), model(15));
+    await store.put(key, { recent, summary: "", lastActive: 1_000 });
+    const { conversation, logs } = compactionSetup({ store });
+    await say(conversation, "next");
+    await settle();
+    const record = await store.get(key);
+    expect(record.summary).toBe(SUMMARY);
+    expect(record.recent[0].role).toBe("user");
+    expect(record.recent.length).toBeLessThan(recent.length);
+    expect(logs.at(-1).details.outcome).toBe("summarized");
+  });
+
+  it("trims the oldest Turns, keeping the last 6, when the Summary leaves it over 100%", async () => {
+    const { conversation, store, logs } = compactionSetup({
+      tokenBudget: 6000,
+      summarizer: async () => ({ text: "s".repeat(16000), usage: null }),
+    });
+    await exchanges(conversation, 25);
+    const record = await store.get(key);
+    const total =
+      estimateTokens(record.summary) +
+      record.recent.reduce((sum, turn) => sum + estimateTokens(turn.text), 0);
+    expect(total).toBeLessThanOrEqual(6000);
+    expect(record.recent.length).toBeGreaterThanOrEqual(6);
+    expect(record.recent[0].role).toBe("user");
+    expect(logs.some((entry) => entry.details.outcome === "trimmed")).toBe(true);
+  });
+
+  it("logs the errorType, never the message, when the summarizer fails", async () => {
+    const { conversation, logs } = compactionSetup({
+      summarizer: async () => {
+        throw Object.assign(new Error("secret upstream text"), { name: "TimeoutError" });
+      },
+    });
+    await exchanges(conversation, 8);
+    expect(logs.at(-1).details).toMatchObject({ outcome: "failed", errorType: "TimeoutError" });
+    expect(JSON.stringify(logs)).not.toContain("secret upstream text");
+  });
+
+  it("logs a failed Compaction when the store rejects instead of swallowing it", async () => {
+    const inner = createMemoryStore();
+    let breakPut = false;
+    const store = {
+      ...inner,
+      put: async (...args) => {
+        if (breakPut) throw Object.assign(new Error("db down"), { name: "DbError" });
+        return inner.put(...args);
+      },
+    };
+    const { conversation, logs } = compactionSetup({
+      store,
+      summarizer: async () => {
+        breakPut = true;
+        return { text: SUMMARY, usage: null };
+      },
+    });
+    await exchanges(conversation, 8);
+    expect(logs.at(-1).details).toMatchObject({ outcome: "failed", errorType: "DbError" });
   });
 
   it("logs ai_compaction with counts and outcome but no content", async () => {

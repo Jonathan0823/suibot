@@ -7,6 +7,7 @@ const DEFAULTS = {
   compactAt: 0.8,
   compactTo: 0.4,
   keepTurns: 6,
+  summaryTokens: 1000, // the Summary cap the summarizer is told to stay under
   idleExpiryMs: IDLE_EXPIRY_MS,
   sweepIntervalMs: 60 * 60 * 1000,
 };
@@ -15,6 +16,9 @@ const RULES = [
   "The timezone is Asia/Jakarta or UTC +7.",
   "Don't reveal conversation context or internal notes in your response.",
 ].join(" ");
+
+// error.name or errorType only, never message text.
+const errorTypeOf = (error) => error?.errorType || error?.name || "unknown";
 
 const keyFor = ({ guildId, channelId, userId, commandName }) =>
   buildKey({ guildId, channelId, userId, persona: commandName });
@@ -49,6 +53,7 @@ export function createConversation({
 }) {
   const cfg = { ...DEFAULTS, ...tunables };
   let lastSweepAt = null;
+  let sweeping = false;
   const queues = new Map();
   // Per Conversation: provider-reported tokens divided by our estimate, from the last reply.
   const calibration = new Map();
@@ -68,16 +73,27 @@ export function createConversation({
     return typeof record?.lastActive === "number" && at - record.lastActive > cfg.idleExpiryMs;
   }
 
-  // Skips `ownKey`: the caller is already inside that Conversation's queue and load() expires it.
-  async function sweepIfDue(at, ownKey) {
-    if (lastSweepAt !== null && at - lastSweepAt < cfg.sweepIntervalMs) return;
-    lastSweepAt = at;
+  // Runs in the background, outside any Conversation's queue slot. Each expired Conversation is
+  // deleted through its own queue, and lastSweepAt only advances once the whole sweep succeeded.
+  async function sweep(at) {
     for (const key of await store.keys()) {
-      if (key === ownKey) continue;
       await enqueue(key, async () => {
         if (isExpired(await store.get(key), at)) await store.delete(key);
       });
     }
+  }
+
+  function sweepIfDue(at) {
+    if (sweeping || (lastSweepAt !== null && at - lastSweepAt < cfg.sweepIntervalMs)) return;
+    sweeping = true;
+    sweep(at)
+      .then(() => {
+        lastSweepAt = at;
+      })
+      .catch((error) => logEvent("ai_sweep_failed", { errorType: errorTypeOf(error) }))
+      .finally(() => {
+        sweeping = false;
+      });
   }
 
   async function load(key, at, commandName) {
@@ -97,26 +113,45 @@ export function createConversation({
     return summary ? `${base}\n\n[Summary] ${summary}` : base;
   }
 
-  const tokensOf = (key, summary, turns) =>
+  const measure = (key, summaryTokens, turns) =>
     Math.ceil(
       (calibration.get(key) ?? 1) *
-        (estimateTokens(summary) + turns.reduce((sum, turn) => sum + estimateTokens(turn.text), 0)),
+        (summaryTokens + turns.reduce((sum, turn) => sum + estimateTokens(turn.text), 0)),
     );
+  const tokensOf = (key, summary, turns) => measure(key, estimateTokens(summary), turns);
 
-  // How many of the oldest Turns to remove: enough to get to compactTo, never the last keepTurns,
-  // and the Turns that stay must start with a member Turn.
-  function foldCount(key, { recent, summary }) {
+  // Picks where to cut the oldest Turns: the Turns that stay must start with a member Turn.
+  // Prefers the first such boundary at or after `wanted` (up to `maxCut`), then the last one before
+  // it. With `pastMax`, a boundary beyond `maxCut` is the last resort so Compaction never stalls.
+  function chooseCut(recent, wanted, maxCut, { pastMax = false } = {}) {
+    const isBoundary = (i) => recent[i]?.role === "user";
+    for (let i = Math.max(1, wanted); i <= maxCut; i++) if (isBoundary(i)) return i;
+    for (let i = Math.min(wanted, maxCut) - 1; i >= 1; i--) if (isBoundary(i)) return i;
+    if (pastMax) for (let i = maxCut + 1; i < recent.length; i++) if (isBoundary(i)) return i;
+    return 0;
+  }
+
+  // How many of the oldest Turns to fold: enough that the new Summary (reserved at its cap) plus
+  // the remaining Turns fit in compactTo, never the last keepTurns where a boundary allows.
+  function foldCount(key, recent) {
     const maxFold = Math.max(0, recent.length - cfg.keepTurns);
     const target = cfg.tokenBudget * cfg.compactTo;
-    let n = 1;
-    while (n < maxFold && tokensOf(key, summary, recent.slice(n)) > target) n++;
-    n = Math.min(n, maxFold);
-    while (n <= maxFold && recent[n]?.role !== "user") n++;
-    if (n > maxFold) {
-      n = maxFold;
-      while (n > 0 && recent[n].role !== "user") n--;
+    let wanted = 1;
+    while (wanted < maxFold && measure(key, cfg.summaryTokens, recent.slice(wanted)) > target) {
+      wanted++;
     }
-    return n;
+    return chooseCut(recent, wanted, maxFold, { pastMax: true });
+  }
+
+  // Drops the oldest Turns (never the last keepTurns) until Summary plus Turns fit the budget.
+  function trimmedRecent(key, summary, recent) {
+    if (tokensOf(key, summary, recent) <= cfg.tokenBudget) return recent;
+    const maxCut = Math.max(0, recent.length - cfg.keepTurns);
+    let wanted = 1;
+    while (wanted < maxCut && tokensOf(key, summary, recent.slice(wanted)) > cfg.tokenBudget) {
+      wanted++;
+    }
+    return recent.slice(chooseCut(recent, wanted, maxCut));
   }
 
   async function compactOnce(key, { requestId, commandName }) {
@@ -124,14 +159,12 @@ export function createConversation({
     if (!record) return;
     const before = tokensOf(key, record.summary ?? "", record.recent);
     if (before <= cfg.tokenBudget * cfg.compactAt) return;
-    const folded = foldCount(key, {
-      recent: record.recent,
-      summary: record.summary ?? "",
-    });
+    const folded = foldCount(key, record.recent);
     if (folded === 0) return;
 
     let next = null;
     let outcome = "failed";
+    let errorType;
     try {
       const { text } = await generate({
         requestId,
@@ -139,22 +172,27 @@ export function createConversation({
         googleSearch: false,
         systemInstruction: SUMMARIZER_INSTRUCTION,
         turns: [
-          {
-            role: "user",
-            text: summarizerPrompt(record.summary, record.recent.slice(0, folded)),
-          },
+          { role: "user", text: summarizerPrompt(record.summary, record.recent.slice(0, folded)) },
         ],
       });
-      if (!text?.trim()) throw new Error("empty summary");
-      next = {
-        ...record,
-        summary: text.trim(),
-        recent: record.recent.slice(folded),
-      };
+      if (!text?.trim())
+        throw Object.assign(new Error("empty summary"), { errorType: "empty_summary" });
+      next = { ...record, summary: text.trim(), recent: record.recent.slice(folded) };
       outcome = "summarized";
-    } catch {
+    } catch (error) {
+      errorType = errorTypeOf(error);
       if (before > cfg.tokenBudget) {
         next = { ...record, recent: record.recent.slice(folded) };
+        outcome = "trimmed";
+      }
+    }
+
+    let turnsFolded = next ? folded : 0;
+    if (next) {
+      const kept = trimmedRecent(key, next.summary ?? "", next.recent);
+      if (kept.length < next.recent.length) {
+        turnsFolded += next.recent.length - kept.length;
+        next = { ...next, recent: kept };
         outcome = "trimmed";
       }
     }
@@ -162,7 +200,9 @@ export function createConversation({
     // Watermark: a changed version means the Conversation moved on while we were summarizing.
     if (next && (await store.get(key))?.version !== record.version) {
       next = null;
+      turnsFolded = 0;
       outcome = "failed";
+      errorType = "conflict";
     }
     if (next) await store.put(key, next);
 
@@ -170,19 +210,23 @@ export function createConversation({
     logEvent("ai_compaction", {
       requestId,
       commandName,
-      turnsFolded: next ? folded : 0,
+      turnsFolded,
       tokensBefore: before,
       tokensAfter: after,
       outcome,
+      ...(errorType ? { errorType } : {}),
     });
   }
 
   function compact(key, context) {
-    return enqueue(key, () => compactOnce(key, context)).catch(() => {});
-  }
-
-  async function idle() {
-    while (queues.size > 0) await Promise.all([...queues.values()]);
+    return enqueue(key, () => compactOnce(key, context)).catch((error) =>
+      logEvent("ai_compaction", {
+        requestId: context.requestId,
+        commandName: context.commandName,
+        outcome: "failed",
+        errorType: errorTypeOf(error),
+      }),
+    );
   }
 
   function reset(scope) {
@@ -200,7 +244,7 @@ export function createConversation({
     const key = keyFor(scope);
     return enqueue(key, async () => {
       const at = now();
-      await sweepIfDue(at, key);
+      sweepIfDue(at);
       const conversation = await load(key, at, scope.commandName);
 
       const memberTurn = { role: "user", text: `from ${speaker}: ${userText}` };
@@ -234,5 +278,5 @@ export function createConversation({
     });
   }
 
-  return { respond, reset, idle };
+  return { respond, reset };
 }
