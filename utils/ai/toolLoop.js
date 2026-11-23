@@ -49,6 +49,6 @@ export function createToolLoop({ generate, tools, logEvent = () => {} }) {
       );
       toolRounds.push({ calls: result.toolCalls, results });
     }
-    return generate({ ...request, toolRounds });
+    return generate({ ...request, googleSearch: false, toolRounds });
   };
 }

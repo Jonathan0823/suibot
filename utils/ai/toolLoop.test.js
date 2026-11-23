@@ -19,14 +19,23 @@ function scripted(...replies) {
   return { generate, calls };
 }
 
-const call = (id) => ({ text: "", toolCalls: [{ id, name: "echo", args: { text: id } }] });
+const call = (id) => ({
+  text: "",
+  toolCalls: [{ id, name: "echo", args: { text: id } }],
+});
 
 describe("tool loop", () => {
   it("runs a call, feeds the result back and returns the final reply", async () => {
-    const { generate, calls } = scripted(call("a"), { text: "done", usage: null });
+    const { generate, calls } = scripted(call("a"), {
+      text: "done",
+      usage: null,
+    });
     const loop = createToolLoop({ generate, tools: [echoTool] });
 
-    const result = await loop({ systemInstruction: "s", turns: [{ role: "user", text: "hi" }] });
+    const result = await loop({
+      systemInstruction: "s",
+      turns: [{ role: "user", text: "hi" }],
+    });
 
     expect(result.text).toBe("done");
     expect(calls[0].toolDefs.map((tool) => tool.name)).toEqual(["echo"]);
@@ -40,9 +49,15 @@ describe("tool loop", () => {
   });
 
   it("stops after 4 Tool rounds and makes a last call with tools off", async () => {
-    const { generate, calls } = scripted(call("1"), call("2"), call("3"), call("4"), {
-      text: "final",
-    });
+    const { generate, calls } = scripted(
+      call("1"),
+      call("2"),
+      call("3"),
+      call("4"),
+      {
+        text: "final",
+      },
+    );
     const loop = createToolLoop({ generate, tools: [echoTool] });
 
     const result = await loop({ turns: [{ role: "user", text: "hi" }] });
@@ -51,6 +66,7 @@ describe("tool loop", () => {
     expect(calls).toHaveLength(5);
     expect(calls[3].toolDefs).toBeDefined();
     expect(calls[4].toolDefs).toBeUndefined();
+    expect(calls[4].googleSearch).toBe(false);
     expect(calls[4].toolRounds).toHaveLength(4);
   });
 
@@ -90,16 +106,26 @@ describe("tool loop", () => {
   it("does not offer Tools to requests that turn googleSearch off", async () => {
     const { generate, calls } = scripted({ text: "summary" });
     const loop = createToolLoop({ generate, tools: [echoTool] });
-    await loop({ googleSearch: false, turns: [{ role: "user", text: "fold" }] });
+    await loop({
+      googleSearch: false,
+      turns: [{ role: "user", text: "fold" }],
+    });
     expect(calls[0].toolDefs).toBeUndefined();
   });
 
   it("keeps only the member Turn and the reply Turn in the Conversation", async () => {
-    const { generate } = scripted(call("a"), call("b"), { text: "final reply" });
+    const { generate } = scripted(call("a"), call("b"), {
+      text: "final reply",
+    });
     const loop = createToolLoop({ generate, tools: [echoTool] });
     const store = createMemoryStore();
     const conversation = createConversation({ store, generate: loop });
-    const scope = { guildId: "g", channelId: "c", userId: "u", commandName: "suisei" };
+    const scope = {
+      guildId: "g",
+      channelId: "c",
+      userId: "u",
+      commandName: "suisei",
+    };
 
     await conversation.respond({
       scope,
