@@ -43,7 +43,11 @@ function nameOption(option, required = true) {
 }
 
 function modelOption(option, required = true) {
-  return option.setName("model").setDescription("Model identifier").setRequired(required);
+  return option
+    .setName("model")
+    .setDescription("Model identifier")
+    .setRequired(required)
+    .setAutocomplete(true);
 }
 
 function baseUrlOption(option, required = false) {

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
+import aiProvider, {
   buildModelWarning,
   buildProviderUpdateData,
   getCredentialLabel,
@@ -131,5 +131,16 @@ describe("model autocomplete", () => {
     expect(buildModelWarning("x", ["a"])).toContain("not in");
     expect(buildModelWarning("a", ["a"])).toBe("");
     expect(buildModelWarning("x", null)).toBe("");
+  });
+});
+
+describe("model option", () => {
+  it("asks Discord for autocomplete on add and update", () => {
+    const { options } = aiProvider.data.toJSON();
+    for (const name of ["add", "update"]) {
+      const sub = options.find((option) => option.name === name);
+      const model = sub.options.find((option) => option.name === "model");
+      expect(model.autocomplete).toBe(true);
+    }
   });
 });
