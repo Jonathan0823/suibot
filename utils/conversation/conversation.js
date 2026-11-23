@@ -78,7 +78,7 @@ export function createConversation({ store, generate, now = Date.now, ...tunable
 
   async function respond({ scope, speaker, text, persona, context }) {
     if (text.toLowerCase() === "reset") return reset(scope);
-    const message = text === "" ? `Halo, ${titleCase(scope.commandName)}!` : text;
+    const userText = text === "" ? `Halo, ${titleCase(scope.commandName)}!` : text;
     const key = keyFor(scope);
     const at = now();
     sweepIfDue(at);
@@ -86,13 +86,13 @@ export function createConversation({ store, generate, now = Date.now, ...tunable
 
     const reply = await generate({
       ...context,
-      contents: buildContents(conversation, speaker, message),
+      contents: buildContents(conversation, speaker, userText),
       systemInstruction: `${persona} ${RULES}`,
     });
 
     const recent = [
       ...conversation.recent,
-      { sender: speaker, content: message },
+      { sender: speaker, content: userText },
       { sender: scope.commandName, content: reply },
     ].slice(-cfg.recentWindow);
     const summary = recent.length >= cfg.summaryThreshold ? summarize(recent) : "";
