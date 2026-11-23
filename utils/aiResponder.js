@@ -2,11 +2,15 @@ import "dotenv/config";
 import getUserName from "../helper/getUserName.js";
 import splitMessage from "../helper/splitMessage.js";
 import { createRequestId, logAiEvent } from "./ai/observability.js";
+import { sendOperationsAlert } from "./ai/discordAlert.js";
 import { createAiProviderService } from "./ai/providers.js";
 import { createConversation } from "./conversation/conversation.js";
 import { createFileStore } from "./conversation/fileStore.js";
 
-const providerService = createAiProviderService({ logEvent: logAiEvent });
+const providerService = createAiProviderService({
+  logEvent: logAiEvent,
+  alert: sendOperationsAlert,
+});
 const conversation = createConversation({
   store: createFileStore(),
   generate: (request) => providerService.generate(request),

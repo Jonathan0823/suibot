@@ -14,6 +14,7 @@ import { loadAlarmId, setupDailyAlarm, triggerAlarm } from "./utils/alarm.js";
 import { getSong, updateSongList } from "./utils/songlist.js";
 import { loadTriggerWords, triggerWords } from "./utils/triggerWord.js";
 import { loadCodeChannels } from "./utils/redeemCodeChannels.js";
+import { bindAlertClient } from "./utils/ai/discordAlert.js";
 import { setupCodeScraperCron } from "./utils/autoCodeBroadcast.js";
 import { fileURLToPath, pathToFileURL } from "node:url";
 const client = new Client({
@@ -25,6 +26,7 @@ const client = new Client({
 });
 
 client.on("clientReady", async () => {
+  bindAlertClient(client);
   await loadAlarmId();
   await loadTriggerWords();
   await loadCodeChannels();
