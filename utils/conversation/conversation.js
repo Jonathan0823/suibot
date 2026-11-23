@@ -65,10 +65,7 @@ export function createConversation({
   }
 
   function isExpired(record, at) {
-    return (
-      typeof record?.lastActive === "number" &&
-      at - record.lastActive > cfg.idleExpiryMs
-    );
+    return typeof record?.lastActive === "number" && at - record.lastActive > cfg.idleExpiryMs;
   }
 
   // Skips `ownKey`: the caller is already inside that Conversation's queue and load() expires it.
@@ -90,9 +87,7 @@ export function createConversation({
       record = null;
     }
     return {
-      recent: (record?.recent ?? []).map((turn) =>
-        normalizeTurn(turn, commandName),
-      ),
+      recent: (record?.recent ?? []).map((turn) => normalizeTurn(turn, commandName)),
       summary: typeof record?.summary === "string" ? record.summary : "",
     };
   }
@@ -105,8 +100,7 @@ export function createConversation({
   const tokensOf = (key, summary, turns) =>
     Math.ceil(
       (calibration.get(key) ?? 1) *
-        (estimateTokens(summary) +
-          turns.reduce((sum, turn) => sum + estimateTokens(turn.text), 0)),
+        (estimateTokens(summary) + turns.reduce((sum, turn) => sum + estimateTokens(turn.text), 0)),
     );
 
   // How many of the oldest Turns to remove: enough to get to compactTo, never the last keepTurns,
@@ -147,10 +141,7 @@ export function createConversation({
         turns: [
           {
             role: "user",
-            text: summarizerPrompt(
-              record.summary,
-              record.recent.slice(0, folded),
-            ),
+            text: summarizerPrompt(record.summary, record.recent.slice(0, folded)),
           },
         ],
       });
@@ -175,9 +166,7 @@ export function createConversation({
     }
     if (next) await store.put(key, next);
 
-    const after = next
-      ? tokensOf(key, next.summary ?? "", next.recent)
-      : before;
+    const after = next ? tokensOf(key, next.summary ?? "", next.recent) : before;
     logEvent("ai_compaction", {
       requestId,
       commandName,
@@ -207,8 +196,7 @@ export function createConversation({
 
   async function respond({ scope, speaker, text, persona, context }) {
     if (text.toLowerCase() === "reset") return reset(scope);
-    const userText =
-      text === "" ? `Halo, ${titleCase(scope.commandName)}!` : text;
+    const userText = text === "" ? `Halo, ${titleCase(scope.commandName)}!` : text;
     const key = keyFor(scope);
     return enqueue(key, async () => {
       const at = now();
@@ -217,10 +205,7 @@ export function createConversation({
 
       const memberTurn = { role: "user", text: `from ${speaker}: ${userText}` };
       const sentTurns = [...conversation.recent, memberTurn];
-      const systemInstruction = buildSystemInstruction(
-        persona,
-        conversation.summary,
-      );
+      const systemInstruction = buildSystemInstruction(persona, conversation.summary);
       const { text: reply, usage } = await generate({
         ...context,
         turns: sentTurns,
@@ -239,10 +224,7 @@ export function createConversation({
         summary: conversation.summary,
         lastActive: at,
       });
-      if (
-        tokensOf(key, conversation.summary, recent) >
-        cfg.tokenBudget * cfg.compactAt
-      ) {
+      if (tokensOf(key, conversation.summary, recent) > cfg.tokenBudget * cfg.compactAt) {
         compact(key, {
           requestId: context?.requestId,
           commandName: scope.commandName,

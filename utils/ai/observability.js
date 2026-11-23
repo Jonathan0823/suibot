@@ -30,10 +30,7 @@ const LOG_FIELDS = new Set([
 function sanitizeErrorMessage(value) {
   return String(value || "Unknown error")
     .replace(/\b(?:sk|sk-or-v1)-[\w-]+/gi, "[redacted-api-key]")
-    .replace(
-      /(authorization|api[-_ ]?key|token|secret|password)\s*[:=]\s*\S+/gi,
-      "$1=[redacted]",
-    )
+    .replace(/(authorization|api[-_ ]?key|token|secret|password)\s*[:=]\s*\S+/gi, "$1=[redacted]")
     .slice(0, 500);
 }
 
@@ -41,10 +38,7 @@ export function logAiEvent(event, details = {}) {
   const safeDetails = Object.fromEntries(
     Object.entries(details)
       .filter(([key]) => LOG_FIELDS.has(key))
-      .map(([key, value]) => [
-        key,
-        key === "errorMessage" ? sanitizeErrorMessage(value) : value,
-      ]),
+      .map(([key, value]) => [key, key === "errorMessage" ? sanitizeErrorMessage(value) : value]),
   );
   console.info(
     JSON.stringify({

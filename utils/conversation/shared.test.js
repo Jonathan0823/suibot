@@ -9,12 +9,10 @@ describe("conversation shared helpers", () => {
   });
 
   it("normalizes legacy Turns and leaves role Turns alone", () => {
-    expect(normalizeTurn({ sender: "hutao", content: "boo" }, "hutao")).toEqual(
-      {
-        role: "model",
-        text: "boo",
-      },
-    );
+    expect(normalizeTurn({ sender: "hutao", content: "boo" }, "hutao")).toEqual({
+      role: "model",
+      text: "boo",
+    });
     expect(normalizeTurn({ sender: "Al", content: "hi" }, "hutao")).toEqual({
       role: "user",
       text: "from Al: hi",

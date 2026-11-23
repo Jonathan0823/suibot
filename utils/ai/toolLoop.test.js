@@ -49,15 +49,9 @@ describe("tool loop", () => {
   });
 
   it("stops after 4 Tool rounds and makes a last call with tools off", async () => {
-    const { generate, calls } = scripted(
-      call("1"),
-      call("2"),
-      call("3"),
-      call("4"),
-      {
-        text: "final",
-      },
-    );
+    const { generate, calls } = scripted(call("1"), call("2"), call("3"), call("4"), {
+      text: "final",
+    });
     const loop = createToolLoop({ generate, tools: [echoTool] });
 
     const result = await loop({ turns: [{ role: "user", text: "hi" }] });

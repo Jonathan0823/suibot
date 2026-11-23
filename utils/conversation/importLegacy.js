@@ -4,13 +4,8 @@ const FACT_MARK = ":fact:";
 const PLACEHOLDER_SUMMARY = /^\[Previous \d+ exchanges/;
 
 function legacySummary(record) {
-  const summary =
-    typeof record.summary === "string"
-      ? record.summary
-      : record.summary?.summary;
-  return typeof summary === "string" && !PLACEHOLDER_SUMMARY.test(summary)
-    ? summary
-    : "";
+  const summary = typeof record.summary === "string" ? record.summary : record.summary?.summary;
+  return typeof summary === "string" && !PLACEHOLDER_SUMMARY.test(summary) ? summary : "";
 }
 
 /**
@@ -22,28 +17,16 @@ function legacySummary(record) {
  * @param {() => number} [deps.now] clock
  * @returns {Promise<{imported: number, skipped: number}>}
  */
-export async function importLegacyConversations({
-  records,
-  store,
-  now = Date.now,
-}) {
+export async function importLegacyConversations({ records, store, now = Date.now }) {
   const at = now();
   let imported = 0;
   let skipped = 0;
 
   for (const [key, record] of Object.entries(records)) {
     const lastActive =
-      typeof record?.lastActive === "number"
-        ? record.lastActive
-        : record?.lastSaved;
-    const idle =
-      typeof lastActive === "number" && at - lastActive > IDLE_EXPIRY_MS;
-    if (
-      key.includes(FACT_MARK) ||
-      !record ||
-      typeof record !== "object" ||
-      idle
-    ) {
+      typeof record?.lastActive === "number" ? record.lastActive : record?.lastSaved;
+    const idle = typeof lastActive === "number" && at - lastActive > IDLE_EXPIRY_MS;
+    if (key.includes(FACT_MARK) || !record || typeof record !== "object" || idle) {
       skipped++;
       continue;
     }

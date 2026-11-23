@@ -27,10 +27,7 @@ export function createPostgresStore({ prisma }) {
       const data = {
         summary: record.summary ?? "",
         turns: record.recent ?? [],
-        lastActive:
-          typeof record.lastActive === "number"
-            ? new Date(record.lastActive)
-            : null,
+        lastActive: typeof record.lastActive === "number" ? new Date(record.lastActive) : null,
       };
       await prisma.conversation.upsert({
         where: uniqueWhere(key),
