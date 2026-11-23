@@ -1,4 +1,5 @@
 import { titleCase } from "../../helper/titleCase.js";
+import { IDLE_EXPIRY_MS, buildKey, normalizeTurn } from "./shared.js";
 import { estimateTokens } from "./tokens.js";
 
 const DEFAULTS = {
@@ -6,7 +7,7 @@ const DEFAULTS = {
   compactAt: 0.8,
   compactTo: 0.4,
   keepTurns: 6,
-  idleExpiryMs: 24 * 60 * 60 * 1000,
+  idleExpiryMs: IDLE_EXPIRY_MS,
   sweepIntervalMs: 60 * 60 * 1000,
 };
 
@@ -15,17 +16,8 @@ const RULES = [
   "Don't reveal conversation context or internal notes in your response.",
 ].join(" ");
 
-// Records written before Turns carried a role stored { sender, content }.
-function normalizeTurn(turn, commandName) {
-  if (turn.role) return turn;
-  return turn.sender === commandName
-    ? { role: "model", text: turn.content }
-    : { role: "user", text: `from ${turn.sender}: ${turn.content}` };
-}
-
-function keyFor({ guildId, channelId, userId, commandName }) {
-  return `${guildId}:${channelId}:${userId}:${commandName}`;
-}
+const keyFor = ({ guildId, channelId, userId, commandName }) =>
+  buildKey({ guildId, channelId, userId, persona: commandName });
 
 const SUMMARIZER_INSTRUCTION = [
   "You keep notes on a chat between a member and a character. Update the existing Summary with the new Turns and reply with the full updated Summary only.",
@@ -73,7 +65,10 @@ export function createConversation({
   }
 
   function isExpired(record, at) {
-    return typeof record?.lastActive === "number" && at - record.lastActive > cfg.idleExpiryMs;
+    return (
+      typeof record?.lastActive === "number" &&
+      at - record.lastActive > cfg.idleExpiryMs
+    );
   }
 
   // Skips `ownKey`: the caller is already inside that Conversation's queue and load() expires it.
@@ -95,7 +90,9 @@ export function createConversation({
       record = null;
     }
     return {
-      recent: (record?.recent ?? []).map((turn) => normalizeTurn(turn, commandName)),
+      recent: (record?.recent ?? []).map((turn) =>
+        normalizeTurn(turn, commandName),
+      ),
       summary: typeof record?.summary === "string" ? record.summary : "",
     };
   }
@@ -108,7 +105,8 @@ export function createConversation({
   const tokensOf = (key, summary, turns) =>
     Math.ceil(
       (calibration.get(key) ?? 1) *
-        (estimateTokens(summary) + turns.reduce((sum, turn) => sum + estimateTokens(turn.text), 0)),
+        (estimateTokens(summary) +
+          turns.reduce((sum, turn) => sum + estimateTokens(turn.text), 0)),
     );
 
   // How many of the oldest Turns to remove: enough to get to compactTo, never the last keepTurns,
@@ -132,7 +130,10 @@ export function createConversation({
     if (!record) return;
     const before = tokensOf(key, record.summary ?? "", record.recent);
     if (before <= cfg.tokenBudget * cfg.compactAt) return;
-    const folded = foldCount(key, { recent: record.recent, summary: record.summary ?? "" });
+    const folded = foldCount(key, {
+      recent: record.recent,
+      summary: record.summary ?? "",
+    });
     if (folded === 0) return;
 
     let next = null;
@@ -144,11 +145,21 @@ export function createConversation({
         googleSearch: false,
         systemInstruction: SUMMARIZER_INSTRUCTION,
         turns: [
-          { role: "user", text: summarizerPrompt(record.summary, record.recent.slice(0, folded)) },
+          {
+            role: "user",
+            text: summarizerPrompt(
+              record.summary,
+              record.recent.slice(0, folded),
+            ),
+          },
         ],
       });
       if (!text?.trim()) throw new Error("empty summary");
-      next = { ...record, summary: text.trim(), recent: record.recent.slice(folded) };
+      next = {
+        ...record,
+        summary: text.trim(),
+        recent: record.recent.slice(folded),
+      };
       outcome = "summarized";
     } catch {
       if (before > cfg.tokenBudget) {
@@ -164,7 +175,9 @@ export function createConversation({
     }
     if (next) await store.put(key, next);
 
-    const after = next ? tokensOf(key, next.summary ?? "", next.recent) : before;
+    const after = next
+      ? tokensOf(key, next.summary ?? "", next.recent)
+      : before;
     logEvent("ai_compaction", {
       requestId,
       commandName,
@@ -194,7 +207,8 @@ export function createConversation({
 
   async function respond({ scope, speaker, text, persona, context }) {
     if (text.toLowerCase() === "reset") return reset(scope);
-    const userText = text === "" ? `Halo, ${titleCase(scope.commandName)}!` : text;
+    const userText =
+      text === "" ? `Halo, ${titleCase(scope.commandName)}!` : text;
     const key = keyFor(scope);
     return enqueue(key, async () => {
       const at = now();
@@ -203,7 +217,10 @@ export function createConversation({
 
       const memberTurn = { role: "user", text: `from ${speaker}: ${userText}` };
       const sentTurns = [...conversation.recent, memberTurn];
-      const systemInstruction = buildSystemInstruction(persona, conversation.summary);
+      const systemInstruction = buildSystemInstruction(
+        persona,
+        conversation.summary,
+      );
       const { text: reply, usage } = await generate({
         ...context,
         turns: sentTurns,
@@ -217,9 +234,19 @@ export function createConversation({
         calibration.set(key, Math.max(0.5, usage.promptTokens / estimated));
       }
       const recent = [...sentTurns, { role: "model", text: reply }];
-      await store.put(key, { recent, summary: conversation.summary, lastActive: at });
-      if (tokensOf(key, conversation.summary, recent) > cfg.tokenBudget * cfg.compactAt) {
-        compact(key, { requestId: context?.requestId, commandName: scope.commandName });
+      await store.put(key, {
+        recent,
+        summary: conversation.summary,
+        lastActive: at,
+      });
+      if (
+        tokensOf(key, conversation.summary, recent) >
+        cfg.tokenBudget * cfg.compactAt
+      ) {
+        compact(key, {
+          requestId: context?.requestId,
+          commandName: scope.commandName,
+        });
       }
       return { kind: "reply", text: reply };
     });
