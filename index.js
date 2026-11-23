@@ -199,6 +199,17 @@ client.on("messageCreate", async (message) => {
 });
 
 client.on("interactionCreate", async (interaction) => {
+  if (interaction.isAutocomplete()) {
+    const command = slashCommandMap.get(interaction.commandName);
+    if (command?.autocomplete) {
+      try {
+        await command.autocomplete(interaction);
+      } catch (error) {
+        console.error(`Error in autocomplete for ${interaction.commandName}:`, error);
+      }
+    }
+    return;
+  }
   if (!interaction.isCommand()) return;
 
   console.log("InteractionCreate Event - Processing Slash Command");

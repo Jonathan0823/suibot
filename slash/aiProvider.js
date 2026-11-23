@@ -1,9 +1,15 @@
 import { ChannelType, MessageFlagsBitField, SlashCommandBuilder } from "discord.js";
 import prisma from "../lib/prisma.js";
-import { clearProviderCredentialCache, loadAiConfig, PROVIDER_TYPES } from "../utils/ai/config.js";
+import {
+  clearProviderCredentialCache,
+  getProviderApiKey,
+  loadAiConfig,
+  PROVIDER_TYPES,
+} from "../utils/ai/config.js";
 import { encryptApiKey } from "../utils/ai/crypto.js";
-import { AiProviderError, createAiProviderService } from "../utils/ai/providers.js";
+import { filterModelIds, modelCatalog } from "../utils/ai/modelCatalog.js";
 import { createRequestId, logAiEvent } from "../utils/ai/observability.js";
+import { AiProviderError, createAiProviderService } from "../utils/ai/providers.js";
 
 const EPHEMERAL = MessageFlagsBitField.Flags.Ephemeral;
 
@@ -37,7 +43,11 @@ function nameOption(option, required = true) {
 }
 
 function modelOption(option, required = true) {
-  return option.setName("model").setDescription("Model identifier").setRequired(required);
+  return option
+    .setName("model")
+    .setDescription("Model identifier")
+    .setRequired(required)
+    .setAutocomplete(true);
 }
 
 function baseUrlOption(option, required = false) {
@@ -65,6 +75,72 @@ async function reply(interaction, content) {
     flags: EPHEMERAL,
     allowedMentions: { parse: [] },
   });
+}
+
+function resolveListing(interaction, provider, getApiKey) {
+  try {
+    if (provider) {
+      return {
+        type: provider.type,
+        baseUrl: provider.baseUrl,
+        apiKey: getApiKey(provider, process.env.AI_ENCRYPTION_KEY),
+      };
+    }
+    const type = interaction.options.getString("type");
+    if (type === PROVIDER_TYPES.GEMINI) {
+      return { type, apiKey: getApiKey({ type }, process.env.AI_ENCRYPTION_KEY) };
+    }
+    const baseUrl = interaction.options.getString("base-url")?.trim();
+    const apiKey = interaction.options.getString("api-key");
+    if (type !== PROVIDER_TYPES.OPENAI_COMPATIBLE || !baseUrl || !apiKey) return null;
+    return { type, baseUrl, apiKey };
+  } catch {
+    return null;
+  }
+}
+
+export async function getModelAutocompleteChoices(
+  interaction,
+  {
+    catalog = modelCatalog,
+    findProvider = (name) => prisma.aiProvider.findUnique({ where: { name } }),
+    getApiKey = getProviderApiKey,
+  } = {},
+) {
+  try {
+    if (!isAuthorized(interaction)) return [];
+    if (interaction.options.getFocused(true).name !== "model") return [];
+    const subcommand = interaction.options.getSubcommand();
+    let provider = null;
+    if (subcommand === "update") {
+      const name = interaction.options.getString("name")?.trim();
+      provider = name ? await findProvider(name) : null;
+      if (!provider) return [];
+    } else if (subcommand !== "add") {
+      return [];
+    }
+    const listing = resolveListing(interaction, provider, getApiKey);
+    if (!listing) return [];
+    const ids = await catalog.listModels(listing);
+    if (!ids) return [];
+    const query = interaction.options.getFocused();
+    return filterModelIds(
+      ids.filter((id) => id.length <= 100),
+      query,
+    ).map((id) => ({ name: id, value: id }));
+  } catch {
+    return [];
+  }
+}
+
+export function buildModelWarning(model, knownIds) {
+  if (!model || !knownIds || knownIds.includes(model)) return "";
+  return ` Warning: model "${safeText(model)}" is not in the provider's model list; it was saved anyway.`;
+}
+
+function modelWarningFor(interaction, provider, model) {
+  const listing = resolveListing(interaction, provider, getProviderApiKey);
+  return buildModelWarning(model, listing ? modelCatalog.peek(listing) : null);
 }
 
 async function handleAdd(interaction) {
@@ -96,7 +172,10 @@ async function handleAdd(interaction) {
       priority,
     },
   });
-  await reply(interaction, `Provider "${safeText(name)}" added.`);
+  await reply(
+    interaction,
+    `Provider "${safeText(name)}" added.${modelWarningFor(interaction, null, model)}`,
+  );
 }
 
 export function buildProviderUpdateData({ model, baseUrl, priority, credentials }) {
@@ -149,7 +228,8 @@ async function handleUpdate(interaction) {
     data: buildProviderUpdateData({ model, baseUrl, priority, credentials }),
   });
   clearProviderCredentialCache(provider.id);
-  await reply(interaction, `Provider "${safeText(name)}" updated.`);
+  const warning = model ? modelWarningFor(interaction, provider, model.trim()) : "";
+  await reply(interaction, `Provider "${safeText(name)}" updated.${warning}`);
 }
 
 async function handleRemove(interaction) {
@@ -280,6 +360,15 @@ export default {
             .setRequired(true),
         ),
     ),
+
+  async autocomplete(interaction) {
+    const choices = await getModelAutocompleteChoices(interaction);
+    try {
+      await interaction.respond(choices);
+    } catch {
+      // The interaction may have expired; nothing useful to do.
+    }
+  },
 
   async execute(interaction) {
     if (!isAuthorized(interaction)) {

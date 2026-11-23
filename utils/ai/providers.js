@@ -29,8 +29,17 @@ export class AiGenerationError extends Error {
   }
 }
 
+// 404 and 410 mean the model or endpoint is missing or removed, so another provider may serve it.
 function fallbackForStatus(status) {
-  return status === 401 || status === 403 || status === 408 || status === 429 || status >= 500;
+  return (
+    status === 401 ||
+    status === 403 ||
+    status === 404 ||
+    status === 408 ||
+    status === 410 ||
+    status === 429 ||
+    status >= 500
+  );
 }
 
 function errorForStatus(status) {

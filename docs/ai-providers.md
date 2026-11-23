@@ -34,6 +34,8 @@ All subcommands are restricted to `AI_ADMIN_USER_IDS` and reply ephemerally.
 - `/ai-provider test` makes a small provider request and reports only status and latency.
 - `/ai-provider set-log-channel` configures the channel for all-provider failure alerts.
 
+The `model` option of `add` and `update` has autocomplete. It suggests up to 25 model ids from the provider's own list, matched case-insensitively anywhere in the id, with `:free` models first. Gemini uses `models.list` (only `generateContent` models, without the `models/` prefix). OpenAI-compatible providers use `GET {base URL}/models`. `update` uses the stored provider; `add` uses the `type`, `base-url` and `api-key` already entered (Gemini uses `API_KEY`). Lists are cached about 10 minutes per provider. A failed or slow fetch yields no suggestions, and non-admins get none. Free text is still accepted; if the id is not in a list that was fetched, the reply warns but saves anyway. Keys and upstream errors are never shown or logged.
+
 Lower priority numbers are tried first. OpenAI-compatible providers use the standard non-streaming `/chat/completions` endpoint. Their base URL may point to a hosted service or a local HTTP endpoint.
 
 Operational logs contain provider/model/status metadata, duration, and request ids. Prompts, responses, API keys, and raw upstream error bodies are not logged. The configured operations channel is notified only when every eligible provider fails, with a cooldown to prevent alert spam.
