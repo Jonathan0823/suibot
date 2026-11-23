@@ -156,9 +156,9 @@ describe("AI provider service", () => {
       fetchImpl,
     });
 
-    await expect(service.generate({ turns: [{ role: "user", text: "question" }] })).rejects.toBeInstanceOf(
-      AiGenerationError,
-    );
+    await expect(
+      service.generate({ turns: [{ role: "user", text: "question" }] }),
+    ).rejects.toBeInstanceOf(AiGenerationError);
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 

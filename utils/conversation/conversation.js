@@ -13,13 +13,21 @@ const RULES = [
   "Don't reveal conversation context or internal notes in your response.",
 ].join(" ");
 
+// Records written before Turns carried a role stored { sender, content }.
+function normalizeTurn(turn, commandName) {
+  if (turn.role) return turn;
+  return turn.sender === commandName
+    ? { role: "model", text: turn.content }
+    : { role: "user", text: `from ${turn.sender}: ${turn.content}` };
+}
+
 function keyFor({ guildId, channelId, userId, commandName }) {
   return `${guildId}:${channelId}:${userId}:${commandName}`;
 }
 
 function summarize(turns) {
   const first = turns[0];
-  return `[Previous ${turns.length} exchanges: started with "${first.sender}: ${first.content.slice(0, 50)}..."]`;
+  return `[Previous ${turns.length} exchanges: started with "${first.text.slice(0, 50)}..."]`;
 }
 
 /**
@@ -45,30 +53,21 @@ export function createConversation({ store, generate, now = Date.now, ...tunable
     }
   }
 
-  function load(key, at) {
+  function load(key, at, commandName) {
     let record = store.get(key);
     if (isExpired(record, at)) {
       store.delete(key);
       record = null;
     }
     return {
-      recent: record?.recent ?? [],
+      recent: (record?.recent ?? []).map((turn) => normalizeTurn(turn, commandName)),
       summary: typeof record?.summary === "string" ? record.summary : "",
     };
   }
 
-  function buildContents({ recent, summary }, speaker, text) {
-    const parts = [];
-    if (summary) parts.push(`[Session Summary] ${summary}`);
-    if (recent.length > 0) {
-      const lines = recent
-        .slice(-cfg.promptTurns)
-        .map((turn) => `${turn.sender}: ${turn.content}`)
-        .join("\n");
-      parts.push(`[Recent Conversation]\n${lines}`);
-    }
-    parts.push(`from ${speaker}: ${text}`);
-    return parts.join("\n\n");
+  function buildSystemInstruction(persona, summary) {
+    const base = `${persona} ${RULES}`;
+    return summary ? `${base}\n\n[Session Summary] ${summary}` : base;
   }
 
   function reset(scope) {
@@ -82,19 +81,18 @@ export function createConversation({ store, generate, now = Date.now, ...tunable
     const key = keyFor(scope);
     const at = now();
     sweepIfDue(at);
-    const conversation = load(key, at);
+    const conversation = load(key, at, scope.commandName);
 
-    const reply = await generate({
+    const memberTurn = { role: "user", text: `from ${speaker}: ${userText}` };
+    const { text: reply } = await generate({
       ...context,
-      contents: buildContents(conversation, speaker, userText),
-      systemInstruction: `${persona} ${RULES}`,
+      turns: [...conversation.recent.slice(-cfg.promptTurns), memberTurn],
+      systemInstruction: buildSystemInstruction(persona, conversation.summary),
     });
 
-    const recent = [
-      ...conversation.recent,
-      { sender: speaker, content: userText },
-      { sender: scope.commandName, content: reply },
-    ].slice(-cfg.recentWindow);
+    const recent = [...conversation.recent, memberTurn, { role: "model", text: reply }].slice(
+      -cfg.recentWindow,
+    );
     const summary = recent.length >= cfg.summaryThreshold ? summarize(recent) : "";
     store.put(key, { recent, summary, lastActive: at });
     return { kind: "reply", text: reply };

@@ -65,12 +65,12 @@ const getMatchFn = (mode) => {
 const findMatchingTrigger = (normalizedInput) => {
   for (const trigger of triggers) {
     const matchFn = getMatchFn(trigger.matchMode);
-    
+
     // Check primary key
     if (matchFn(normalizedInput, trigger.key)) {
       return trigger;
     }
-    
+
     // Check aliases
     if (trigger.aliases && trigger.aliases.length > 0) {
       for (const alias of trigger.aliases) {
@@ -80,7 +80,7 @@ const findMatchingTrigger = (normalizedInput) => {
       }
     }
   }
-  
+
   return null;
 };
 

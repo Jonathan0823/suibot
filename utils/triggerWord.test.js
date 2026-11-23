@@ -30,9 +30,30 @@ describe("Trigger Word System", () => {
   describe("loadTriggerWords", () => {
     it("should load and normalize triggers from database", async () => {
       const mockTriggers = [
-        { key: "  Hello  ", response: "Hi!", matchMode: "exact", enabled: true, priority: 1, aliases: ["HI"] },
-        { key: "WORLD", response: "Hello!", matchMode: "prefix", enabled: true, priority: 0, aliases: [] },
-        { key: String.raw`\d+ Codes`, response: "Found!", matchMode: "regex", enabled: true, priority: 5, aliases: [] },
+        {
+          key: "  Hello  ",
+          response: "Hi!",
+          matchMode: "exact",
+          enabled: true,
+          priority: 1,
+          aliases: ["HI"],
+        },
+        {
+          key: "WORLD",
+          response: "Hello!",
+          matchMode: "prefix",
+          enabled: true,
+          priority: 0,
+          aliases: [],
+        },
+        {
+          key: String.raw`\d+ Codes`,
+          response: "Found!",
+          matchMode: "regex",
+          enabled: true,
+          priority: 5,
+          aliases: [],
+        },
       ];
 
       prisma.triggerWord.findMany.mockResolvedValue(mockTriggers);
@@ -47,7 +68,14 @@ describe("Trigger Word System", () => {
 
     it("should normalize non-regex keys to lowercase", async () => {
       const mockTriggers = [
-        { key: "HELLO", response: "Hi", matchMode: "exact", enabled: true, priority: 0, aliases: ["HEY"] },
+        {
+          key: "HELLO",
+          response: "Hi",
+          matchMode: "exact",
+          enabled: true,
+          priority: 0,
+          aliases: ["HEY"],
+        },
       ];
 
       prisma.triggerWord.findMany.mockResolvedValue(mockTriggers);
@@ -61,7 +89,14 @@ describe("Trigger Word System", () => {
 
     it("should NOT lowercase regex patterns", async () => {
       const mockTriggers = [
-        { key: String.raw`\D+`, response: "No digits!", matchMode: "regex", enabled: true, priority: 0, aliases: [] },
+        {
+          key: String.raw`\D+`,
+          response: "No digits!",
+          matchMode: "regex",
+          enabled: true,
+          priority: 0,
+          aliases: [],
+        },
       ];
 
       prisma.triggerWord.findMany.mockResolvedValue(mockTriggers);
@@ -76,9 +111,33 @@ describe("Trigger Word System", () => {
     beforeEach(async () => {
       // Pre-load triggers for matching tests
       const mockTriggers = [
-        { key: "hello", response: "Hi there!", matchMode: "exact", enabled: true, priority: 1, aliases: ["hi", "hey"], cooldownSeconds: 0 },
-        { key: "play", response: "Playing!", matchMode: "prefix", enabled: true, priority: 0, aliases: [], cooldownSeconds: 0 },
-        { key: "help", response: "Help message", matchMode: "contains", enabled: true, priority: 0, aliases: [], cooldownSeconds: 0 },
+        {
+          key: "hello",
+          response: "Hi there!",
+          matchMode: "exact",
+          enabled: true,
+          priority: 1,
+          aliases: ["hi", "hey"],
+          cooldownSeconds: 0,
+        },
+        {
+          key: "play",
+          response: "Playing!",
+          matchMode: "prefix",
+          enabled: true,
+          priority: 0,
+          aliases: [],
+          cooldownSeconds: 0,
+        },
+        {
+          key: "help",
+          response: "Help message",
+          matchMode: "contains",
+          enabled: true,
+          priority: 0,
+          aliases: [],
+          cooldownSeconds: 0,
+        },
       ];
       prisma.triggerWord.findMany.mockResolvedValue(mockTriggers);
       await loadTriggerWords();
@@ -164,7 +223,16 @@ describe("Trigger Word System", () => {
     it("should enforce cooldown per user", async () => {
       // Load trigger with cooldown
       const mockTriggers = [
-        { key: "test", response: "Hi!", matchMode: "exact", enabled: true, priority: 0, aliases: [], cooldownSeconds: 5, id: "trigger1" },
+        {
+          key: "test",
+          response: "Hi!",
+          matchMode: "exact",
+          enabled: true,
+          priority: 0,
+          aliases: [],
+          cooldownSeconds: 5,
+          id: "trigger1",
+        },
       ];
       prisma.triggerWord.findMany.mockResolvedValue(mockTriggers);
       await loadTriggerWords();
@@ -182,7 +250,16 @@ describe("Trigger Word System", () => {
 
     it("should allow different users to trigger independently", async () => {
       const mockTriggers = [
-        { key: "test", response: "Hi!", matchMode: "exact", enabled: true, priority: 0, aliases: [], cooldownSeconds: 5, id: "trigger1" },
+        {
+          key: "test",
+          response: "Hi!",
+          matchMode: "exact",
+          enabled: true,
+          priority: 0,
+          aliases: [],
+          cooldownSeconds: 5,
+          id: "trigger1",
+        },
       ];
       prisma.triggerWord.findMany.mockResolvedValue(mockTriggers);
       await loadTriggerWords();
@@ -199,7 +276,17 @@ describe("Trigger Word System", () => {
 
   describe("reloadTriggerWords", () => {
     it("should call loadTriggerWords", async () => {
-      const mockTriggers = [{ key: "test", response: "Hi!", matchMode: "exact", enabled: true, priority: 0, aliases: [], cooldownSeconds: 0 }];
+      const mockTriggers = [
+        {
+          key: "test",
+          response: "Hi!",
+          matchMode: "exact",
+          enabled: true,
+          priority: 0,
+          aliases: [],
+          cooldownSeconds: 0,
+        },
+      ];
       prisma.triggerWord.findMany.mockResolvedValue(mockTriggers);
 
       await reloadTriggerWords();

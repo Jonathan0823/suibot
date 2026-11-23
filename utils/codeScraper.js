@@ -45,8 +45,7 @@ async function fetchHoyoCodes(game) {
 // Wuthering Waves scraping source
 const WUWA_SOURCE = "https://game8.co/games/Wuthering-Waves/archives/453149";
 // Arknights: Endfield scraping source
-const ENDFIELD_SOURCE =
-  "https://game8.co/games/Arknights-Endfield/archives/571509";
+const ENDFIELD_SOURCE = "https://game8.co/games/Arknights-Endfield/archives/571509";
 
 const SCRAPED_CODE_GAMES = ["gi", "hsr", "zzz", "wuwa", "endfield"];
 const MAX_CODES_PER_GAME = 200;
@@ -140,9 +139,7 @@ async function revalidateCacheMisses(game, codes) {
     addCodeToCache(game, code);
   }
 
-  return codes.filter(
-    (code) => !cachedSet.has(code.code) && !existingSet.has(code.code),
-  );
+  return codes.filter((code) => !cachedSet.has(code.code) && !existingSet.has(code.code));
 }
 
 /**
@@ -183,12 +180,7 @@ async function fetchWuwaCodes() {
 
         // Only accept if rewards contain "Astrite" (Wuwa premium currency)
         // This filters out false positives
-        if (
-          code &&
-          rewards &&
-          !code.includes(" ") &&
-          /astrite/i.test(rewards)
-        ) {
+        if (code && rewards && !code.includes(" ") && /astrite/i.test(rewards)) {
           codes.push({ code, rewards });
         }
       }
@@ -210,8 +202,7 @@ async function fetchWuwaCodes() {
 
     // Remove duplicates
     const uniqueCodes = codes.filter(
-      (code, index, self) =>
-        index === self.findIndex((c) => c.code === code.code),
+      (code, index, self) => index === self.findIndex((c) => c.code === code.code),
     );
 
     return uniqueCodes;
@@ -248,8 +239,7 @@ async function fetchEndfieldCodes() {
     // We look for any h3 containing "Active Code"
     const header = $("h3")
       .filter((_, el) => {
-        return /Active Code/i.exec($(el)
-          .text());
+        return /Active Code/i.exec($(el).text());
       })
       .first();
 
@@ -277,9 +267,7 @@ async function fetchEndfieldCodes() {
             // Code is bold text in first cell
             // Code is bold text in first cell, or in an input value
             let code = "";
-            const inputVal = codeCell
-              .find("input.a-clipboard__textInput")
-              .val();
+            const inputVal = codeCell.find("input.a-clipboard__textInput").val();
             if (inputVal) {
               code = inputVal.trim();
             } else {
@@ -312,8 +300,7 @@ async function fetchEndfieldCodes() {
 
     // Remove duplicates
     const uniqueCodes = codes.filter(
-      (code, index, self) =>
-        index === self.findIndex((c) => c.code === code.code),
+      (code, index, self) => index === self.findIndex((c) => c.code === code.code),
     );
 
     return uniqueCodes;
@@ -386,11 +373,7 @@ async function getAllNewCodes() {
   );
 
   for (const game of Object.keys(fetchedCodes)) {
-    const cachedFiltered = await filterNewCodes(
-      game,
-      fetchedCodes[game],
-      existingCodesByGame,
-    );
+    const cachedFiltered = await filterNewCodes(game, fetchedCodes[game], existingCodesByGame);
 
     results[game] = await revalidateCacheMisses(game, cachedFiltered);
   }

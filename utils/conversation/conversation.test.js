@@ -14,11 +14,13 @@ function setup({ store = createMemoryStore(), replies = [], failWith } = {}) {
   const generate = async (request) => {
     calls.push(request);
     if (failWith) throw failWith;
-    return replies[n++] ?? `reply ${n}`;
+    return { text: replies[n++] ?? `reply ${n}`, usage: null };
   };
   const make = () => createConversation({ store, generate, now: () => 1_000 });
   return { store, calls, conversation: make(), make };
 }
+
+const texts = (call) => call.turns.map((turn) => `${turn.role}: ${turn.text}`);
 
 const say = (conversation, text, extra = {}) =>
   conversation.respond({ scope, speaker: "Alice", text, persona: "You are Hu Tao.", ...extra });
@@ -28,7 +30,7 @@ describe("Conversation", () => {
     const { conversation, calls } = setup({ replies: ["boo!"] });
     const result = await say(conversation, "hi");
     expect(result).toEqual({ kind: "reply", text: "boo!" });
-    expect(calls[0].contents).toBe("from Alice: hi");
+    expect(calls[0].turns).toEqual([{ role: "user", text: "from Alice: hi" }]);
     expect(calls[0].systemInstruction).toBe(
       "You are Hu Tao. The timezone is Asia/Jakarta or UTC +7. Don't reveal conversation context or internal notes in your response.",
     );
@@ -38,16 +40,22 @@ describe("Conversation", () => {
     const { conversation, calls } = setup({ replies: ["boo!"] });
     await say(conversation, "hi");
     await say(conversation, "again");
-    expect(calls[1].contents).toBe(
-      "[Recent Conversation]\nAlice: hi\nhutao: boo!\n\nfrom Alice: again",
-    );
+    expect(calls[1].turns).toEqual([
+      { role: "user", text: "from Alice: hi" },
+      { role: "model", text: "boo!" },
+      { role: "user", text: "from Alice: again" },
+    ]);
   });
 
   it("remembers the latest exchange after a restart (no one-behind bug)", async () => {
     const { conversation, make, calls } = setup({ replies: ["boo!"] });
     await say(conversation, "hi");
     await say(make(), "again");
-    expect(calls[1].contents).toContain("Alice: hi\nhutao: boo!");
+    expect(texts(calls[1])).toEqual([
+      "user: from Alice: hi",
+      "model: boo!",
+      "user: from Alice: again",
+    ]);
   });
 
   it("isolates conversations by server, channel, user and persona", async () => {
@@ -63,7 +71,7 @@ describe("Conversation", () => {
       await say(conversation, "hello", { scope: other });
     }
     for (const call of calls.slice(1)) {
-      expect(call.contents).toBe("from Alice: hello");
+      expect(call.turns).toEqual([{ role: "user", text: "from Alice: hello" }]);
     }
   });
 
@@ -73,7 +81,7 @@ describe("Conversation", () => {
     expect(await say(conversation, "ReSeT")).toEqual({ kind: "reset" });
     expect(store.keys()).toEqual([]);
     await say(make(), "hello");
-    expect(calls.at(-1).contents).toBe("from Alice: hello");
+    expect(calls.at(-1).turns).toEqual([{ role: "user", text: "from Alice: hello" }]);
   });
 
   it("reset(scope) clears the conversation", async () => {
@@ -82,31 +90,31 @@ describe("Conversation", () => {
     expect(await conversation.reset(scope)).toEqual({ kind: "reset" });
     expect(store.keys()).toEqual([]);
     await say(conversation, "hello");
-    expect(calls.at(-1).contents).toBe("from Alice: hello");
+    expect(calls.at(-1).turns).toEqual([{ role: "user", text: "from Alice: hello" }]);
   });
 
   it("greets when text is empty", async () => {
     const { conversation, calls } = setup();
     await say(conversation, "", { scope: { ...scope, commandName: "hu tao" } });
-    expect(calls[0].contents).toBe("from Alice: Halo, Hu Tao!");
+    expect(calls[0].turns).toEqual([{ role: "user", text: "from Alice: Halo, Hu Tao!" }]);
   });
 
   it("keeps a 10 turn window and prompts with the last 8", async () => {
     const { conversation, calls } = setup();
     for (let i = 1; i <= 7; i++) await say(conversation, `m${i}`);
-    const prompt = calls.at(-1).contents; // after 6 exchanges = 12 turns, window 10
-    const recent = prompt.split("[Recent Conversation]\n")[1].split("\n\nfrom")[0].split("\n");
-    expect(recent).toHaveLength(8);
-    expect(recent.at(-1)).toBe("hutao: reply 6");
+    const turns = calls.at(-1).turns; // after 6 exchanges = 12 turns, window 10
+    expect(turns).toHaveLength(9); // 8 recent + the new message
+    expect(turns.at(-2)).toEqual({ role: "model", text: "reply 6" });
+    expect(turns[0].role).toBe("user");
   });
 
   it("adds a summary from the updated turns once the threshold is reached", async () => {
     const { conversation, calls } = setup();
     for (let i = 1; i <= 5; i++) await say(conversation, `m${i}`);
-    expect(calls.at(-1).contents).not.toContain("[Session Summary]");
+    expect(calls.at(-1).systemInstruction).not.toContain("[Session Summary]");
     await say(conversation, "m6"); // 5 exchanges = 10 turns were stored after m5
-    expect(calls.at(-1).contents).toContain(
-      '[Session Summary] [Previous 10 exchanges: started with "Alice: m1..."]',
+    expect(calls.at(-1).systemInstruction).toContain(
+      '[Session Summary] [Previous 10 exchanges: started with "from Alice: m1..."]',
     );
   });
 
@@ -121,9 +129,11 @@ describe("Conversation", () => {
     expect(store.get(store.keys()[0])).toEqual(before);
     const next = setup({ store });
     await say(next.conversation, "later");
-    expect(next.calls[0].contents).toBe(
-      "[Recent Conversation]\nAlice: hi\nhutao: boo!\n\nfrom Alice: later",
-    );
+    expect(texts(next.calls[0])).toEqual([
+      "user: from Alice: hi",
+      "model: boo!",
+      "user: from Alice: later",
+    ]);
   });
 
   it("uses the persona passed on each call", async () => {
@@ -138,6 +148,15 @@ describe("Conversation", () => {
     const context = { requestId: "r1", commandName: "hutao", notifyFailure: () => {} };
     await say(conversation, "hi", { context });
     expect(calls[0]).toMatchObject(context);
+  });
+
+  it("stores each Turn once, in the form it was sent", async () => {
+    const { conversation, store } = setup({ replies: ["boo!"] });
+    await say(conversation, "hi");
+    expect(store.get("g1:c1:u1:hutao").recent).toEqual([
+      { role: "user", text: "from Alice: hi" },
+      { role: "model", text: "boo!" },
+    ]);
   });
 
   it("writes no fact entries", async () => {
@@ -156,7 +175,7 @@ describe("Conversation idle expiry", () => {
     const calls = [];
     const generate = async (request) => {
       calls.push(request);
-      return "boo!";
+      return { text: "boo!", usage: null };
     };
     const make = () => createConversation({ store, generate, now: () => clock.t, ...tunables });
     return { clock, store, calls, make, conversation: make() };
@@ -177,7 +196,7 @@ describe("Conversation idle expiry", () => {
     await say(conversation, "hi");
     clock.t = 86400000 + 1;
     await say(conversation, "again");
-    expect(calls[1].contents).toBe("from Alice: again");
+    expect(calls[1].turns).toEqual([{ role: "user", text: "from Alice: again" }]);
     expect(calls[1].systemInstruction).not.toContain("[Session Summary]");
     expect(store.get(key).recent).toHaveLength(2);
   });
@@ -187,7 +206,7 @@ describe("Conversation idle expiry", () => {
     await say(conversation, "hi");
     clock.t = 86400000;
     await say(conversation, "again");
-    expect(calls[1].contents).toContain("Alice: hi\nhutao: boo!");
+    expect(texts(calls[1])).toContain("model: boo!");
   });
 
   it("expires across a simulated restart once the clock is past 24 hours", async () => {
@@ -195,10 +214,10 @@ describe("Conversation idle expiry", () => {
     await say(conversation, "hi");
     clock.t = 82800000;
     await say(make(), "still here");
-    expect(calls[1].contents).toContain("Alice: hi\nhutao: boo!");
+    expect(texts(calls[1])).toContain("model: boo!");
     clock.t = 172800000;
     await say(make(), "gone");
-    expect(calls[2].contents).toBe("from Alice: gone");
+    expect(calls[2].turns).toEqual([{ role: "user", text: "from Alice: gone" }]);
   });
 
   it("sweeps expired records from the store on a later turn", async () => {
@@ -227,14 +246,18 @@ describe("Conversation idle expiry", () => {
     const { clock, store, calls, conversation } = clockSetup();
     store.put(key, {
       recent: [
-        { sender: "Alice", content: "hi" },
-        { sender: "hutao", content: "boo!" },
+        { role: "user", text: "from Alice: hi" },
+        { role: "model", text: "boo!" },
       ],
       summary: "",
     });
     clock.t = 86400000000;
     await say(conversation, "later");
-    expect(calls[0].contents).toContain("Alice: hi\nhutao: boo!");
+    expect(texts(calls[0])).toEqual([
+      "user: from Alice: hi",
+      "model: boo!",
+      "user: from Alice: later",
+    ]);
     expect(store.get(key).lastActive).toBe(86400000000);
   });
 
@@ -247,8 +270,8 @@ describe("Conversation idle expiry", () => {
         JSON.stringify({
           [key]: {
             recent: [
-              { sender: "Alice", content: "hi" },
-              { sender: "hutao", content: "boo!" },
+              { role: "user", text: "from Alice: hi" },
+              { role: "model", text: "boo!" },
             ],
             summary: "",
           },
@@ -258,7 +281,7 @@ describe("Conversation idle expiry", () => {
       const calls = [];
       const generate = async (request) => {
         calls.push(request);
-        return "boo!";
+        return { text: "boo!", usage: null };
       };
       const conversation = createConversation({
         store,
@@ -268,7 +291,11 @@ describe("Conversation idle expiry", () => {
 
       await say(conversation, "later");
 
-      expect(calls[0].contents).toContain("Alice: hi\nhutao: boo!");
+      expect(texts(calls[0])).toEqual([
+        "user: from Alice: hi",
+        "model: boo!",
+        "user: from Alice: later",
+      ]);
       expect(store.get(key).lastActive).toBe(86400000000);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
@@ -280,6 +307,6 @@ describe("Conversation idle expiry", () => {
     await say(conversation, "hi");
     clock.t = 1_001;
     await say(conversation, "again");
-    expect(calls[1].contents).toBe("from Alice: again");
+    expect(calls[1].turns).toEqual([{ role: "user", text: "from Alice: again" }]);
   });
 });

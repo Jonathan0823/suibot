@@ -18,8 +18,7 @@ async function hoyoContainer(message, type, id) {
 
     const profilePicture = await getHoyoAssetsfromURL(
       type,
-      response.player.profilePicture.assets.oldIcon ||
-        response.player.profilePicture.assets.icon,
+      response.player.profilePicture.assets.oldIcon || response.player.profilePicture.assets.icon,
     );
 
     const embed = new EmbedBuilder()
