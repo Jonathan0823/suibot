@@ -48,6 +48,33 @@ describe("tool loop", () => {
     ]);
   });
 
+  it("returns the first call's usage so Tool transcripts do not inflate calibration", async () => {
+    const first = { promptTokens: 100, outputTokens: 5 };
+    const last = { promptTokens: 900, outputTokens: 7 };
+    const { generate } = scripted({ ...call("a"), usage: first }, { text: "done", usage: last });
+    const loop = createToolLoop({ generate, tools: [echoTool] });
+
+    const result = await loop({ turns: [{ role: "user", text: "hi" }] });
+
+    expect(result).toEqual({ text: "done", usage: first });
+  });
+
+  it("returns the first call's usage after the capped last call too", async () => {
+    const usage = (promptTokens) => ({ promptTokens, outputTokens: 1 });
+    const { generate } = scripted(
+      { ...call("1"), usage: usage(10) },
+      { ...call("2"), usage: usage(20) },
+      { ...call("3"), usage: usage(30) },
+      { ...call("4"), usage: usage(40) },
+      { text: "final", usage: usage(50) },
+    );
+    const loop = createToolLoop({ generate, tools: [echoTool] });
+
+    const result = await loop({ turns: [{ role: "user", text: "hi" }] });
+
+    expect(result.usage).toEqual(usage(10));
+  });
+
   it("stops after 4 Tool rounds and makes a last call with tools off", async () => {
     const { generate, calls } = scripted(call("1"), call("2"), call("3"), call("4"), {
       text: "final",

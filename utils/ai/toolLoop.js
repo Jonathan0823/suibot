@@ -43,15 +43,20 @@ export function createToolLoop({ generate, tools, logEvent = () => {} }) {
     // Requests that turn googleSearch off (Compaction) are not replies and get no Tools.
     if (request.googleSearch === false) return generate(request);
 
+    // Usage comes from the first call (system instruction + Turns, no Tool transcript) so
+    // Conversation calibration is not inflated by Tool rounds.
+    let baseUsage;
     const toolRounds = [];
     for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
       const result = await generate({ ...request, toolDefs, toolRounds });
-      if (!result.toolCalls?.length) return result;
+      if (round === 0) baseUsage = result.usage;
+      if (!result.toolCalls?.length) return { ...result, usage: baseUsage };
       const results = await Promise.all(
         result.toolCalls.map((call) => runTool(call, request.requestId)),
       );
       toolRounds.push({ calls: result.toolCalls, results });
     }
-    return generate({ ...request, googleSearch: false, toolRounds });
+    const last = await generate({ ...request, googleSearch: false, toolRounds });
+    return { ...last, usage: baseUsage };
   };
 }
