@@ -19,6 +19,8 @@ const LOG_FIELDS = new Set([
   "errorMessage",
   "statusCode",
   "command",
+  "tool",
+  "ok",
 ]);
 
 function sanitizeErrorMessage(value) {
