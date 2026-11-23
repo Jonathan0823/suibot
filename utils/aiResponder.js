@@ -5,14 +5,15 @@ import { createRequestId, logAiEvent } from "./ai/observability.js";
 import { sendOperationsAlert } from "./ai/discordAlert.js";
 import { createAiProviderService } from "./ai/providers.js";
 import { createConversation } from "./conversation/conversation.js";
-import { createFileStore } from "./conversation/fileStore.js";
+import { createPostgresStore } from "./conversation/postgresStore.js";
+import prisma from "../lib/prisma.js";
 
 const providerService = createAiProviderService({
   logEvent: logAiEvent,
   alert: sendOperationsAlert,
 });
 const conversation = createConversation({
-  store: createFileStore(),
+  store: createPostgresStore({ prisma }),
   generate: (request) => providerService.generate(request),
 });
 
