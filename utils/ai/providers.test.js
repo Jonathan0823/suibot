@@ -249,6 +249,206 @@ describe("AI provider service", () => {
   });
 });
 
+describe("Tool calls through the provider adapters", () => {
+  const toolDefs = [
+    {
+      name: "get_current_time",
+      description: "Current time",
+      parameters: { type: "object", properties: {} },
+    },
+  ];
+  const rounds = [
+    {
+      calls: [{ id: "c1", name: "get_current_time", args: {} }],
+      results: [{ id: "c1", name: "get_current_time", output: "12:00" }],
+    },
+  ];
+
+  it("sends Gemini functionDeclarations without googleSearch and reads functionCall parts", async () => {
+    const generateContent = vi.fn().mockResolvedValue({
+      candidates: [
+        {
+          content: {
+            parts: [{ functionCall: { name: "get_current_time", args: {} } }],
+          },
+        },
+      ],
+    });
+    const result = await generateWithGemini(
+      { type: "gemini", model: "m" },
+      {
+        systemInstruction: "s",
+        turns: [{ role: "user", text: "what time is it" }],
+        toolDefs,
+        apiKey: "k",
+        geminiClientFactory: () => ({ models: { generateContent } }),
+      },
+    );
+
+    expect(result.toolCalls).toEqual([
+      expect.objectContaining({ name: "get_current_time", args: {} }),
+    ]);
+    const config = generateContent.mock.calls[0][0].config;
+    expect(config.tools).toEqual([
+      {
+        functionDeclarations: [
+          {
+            name: "get_current_time",
+            description: "Current time",
+            parametersJsonSchema: { type: "object", properties: {} },
+          },
+        ],
+      },
+    ]);
+    expect(JSON.stringify(config)).not.toContain("googleSearch");
+  });
+
+  it("answers Gemini function calls with functionResponse parts", async () => {
+    const generateContent = vi.fn().mockResolvedValue({ text: "It is noon" });
+    await generateWithGemini(
+      { type: "gemini", model: "m" },
+      {
+        systemInstruction: "s",
+        turns: [{ role: "user", text: "what time is it" }],
+        toolDefs,
+        toolRounds: rounds,
+        apiKey: "k",
+        geminiClientFactory: () => ({ models: { generateContent } }),
+      },
+    );
+    expect(generateContent.mock.calls[0][0].contents.slice(1)).toEqual([
+      { role: "model", parts: [{ functionCall: { name: "get_current_time", args: {} } }] },
+      {
+        role: "user",
+        parts: [
+          {
+            functionResponse: { name: "get_current_time", response: { output: "12:00" } },
+          },
+        ],
+      },
+    ]);
+  });
+
+  it("sends OpenAI-compatible tools and reads tool_calls", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        choices: [
+          {
+            message: {
+              content: null,
+              tool_calls: [
+                {
+                  id: "c1",
+                  type: "function",
+                  function: { name: "get_current_time", arguments: "{}" },
+                },
+              ],
+            },
+          },
+        ],
+      }),
+    });
+    const result = await generateWithOpenAiCompatible(openAiProvider("t"), {
+      systemInstruction: "s",
+      turns: [{ role: "user", text: "time?" }],
+      toolDefs,
+      apiKey: "k",
+      fetchImpl,
+    });
+    expect(result.toolCalls).toEqual([{ id: "c1", name: "get_current_time", args: {} }]);
+    expect(JSON.parse(fetchImpl.mock.calls[0][1].body).tools).toEqual([
+      {
+        type: "function",
+        function: {
+          name: "get_current_time",
+          description: "Current time",
+          parameters: { type: "object", properties: {} },
+        },
+      },
+    ]);
+  });
+
+  it("answers OpenAI-compatible tool calls with role tool messages", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ choices: [{ message: { content: "It is noon" } }] }),
+    });
+    await generateWithOpenAiCompatible(openAiProvider("t"), {
+      systemInstruction: "s",
+      turns: [{ role: "user", text: "time?" }],
+      toolDefs,
+      toolRounds: rounds,
+      apiKey: "k",
+      fetchImpl,
+    });
+    expect(JSON.parse(fetchImpl.mock.calls[0][1].body).messages.slice(2)).toEqual([
+      {
+        role: "assistant",
+        content: null,
+        tool_calls: [
+          { id: "c1", type: "function", function: { name: "get_current_time", arguments: "{}" } },
+        ],
+      },
+      { role: "tool", tool_call_id: "c1", content: "12:00" },
+    ]);
+  });
+
+  it("returns Gemini grounding source URLs", async () => {
+    const result = await generateWithGemini(
+      { type: "gemini", model: "m" },
+      {
+        systemInstruction: "s",
+        turns: [{ role: "user", text: "q" }],
+        apiKey: "k",
+        geminiClientFactory: () => ({
+          models: {
+            generateContent: vi.fn().mockResolvedValue({
+              text: "answer",
+              candidates: [
+                {
+                  groundingMetadata: {
+                    groundingChunks: [
+                      { web: { uri: "https://a.test" } },
+                      { web: { uri: "https://b.test" } },
+                    ],
+                  },
+                },
+              ],
+            }),
+          },
+        }),
+      },
+    );
+    expect(result.sources).toEqual(["https://a.test", "https://b.test"]);
+  });
+});
+
+describe("web search", () => {
+  it("queries the first Gemini provider with only googleSearch on", async () => {
+    process.env.API_KEY = "gemini-key";
+    const generateContent = vi.fn().mockResolvedValue({ text: "answer" });
+    const gemini = { id: "g", name: "gemini", type: "gemini", model: "gm", enabled: true };
+    const db = dbFor([openAiProvider("a"), gemini]);
+    db.aiProvider.upsert.mockResolvedValue({});
+    const service = createAiProviderService({
+      db,
+      encryptionKey,
+      geminiClientFactory: () => ({ models: { generateContent } }),
+    });
+
+    const result = await service.search("news");
+
+    expect(result.text).toBe("answer");
+    expect(generateContent.mock.calls[0][0].config.tools).toEqual([{ googleSearch: {} }]);
+  });
+
+  it("fails when no Gemini provider is configured", async () => {
+    const service = createAiProviderService({ db: dbFor([openAiProvider("a")]), encryptionKey });
+    await expect(service.search("news")).rejects.toMatchObject({ errorType: "configuration" });
+  });
+});
+
 describe("provider credential cache", () => {
   it("invalidates cached credentials when updatedAt changes", () => {
     const first = encryptApiKey("first-key", encryptionKey);

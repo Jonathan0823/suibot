@@ -108,9 +108,57 @@ function mergeTurns(turns) {
   return merged;
 }
 
+function parseJsonObject(text) {
+  try {
+    const value = JSON.parse(text || "{}");
+    return value && typeof value === "object" ? value : {};
+  } catch {
+    return {};
+  }
+}
+
+// Tool rounds of one reply, as OpenAI-compatible messages.
+function openAiToolMessages(toolRounds) {
+  return (toolRounds ?? []).flatMap((round) => [
+    {
+      role: "assistant",
+      content: null,
+      tool_calls: round.calls.map((call) => ({
+        id: call.id,
+        type: "function",
+        function: { name: call.name, arguments: JSON.stringify(call.args ?? {}) },
+      })),
+    },
+    ...round.results.map((result) => ({
+      role: "tool",
+      tool_call_id: result.id,
+      content: result.output,
+    })),
+  ]);
+}
+
+// Tool rounds of one reply, as Gemini contents.
+function geminiToolContents(toolRounds) {
+  return (toolRounds ?? []).flatMap((round) => [
+    {
+      role: "model",
+      parts: round.calls.map((call) => ({
+        functionCall: { name: call.name, args: call.args ?? {} },
+        ...(call.thoughtSignature ? { thoughtSignature: call.thoughtSignature } : {}),
+      })),
+    },
+    {
+      role: "user",
+      parts: round.results.map((result) => ({
+        functionResponse: { name: result.name, response: { output: result.output } },
+      })),
+    },
+  ]);
+}
+
 export async function generateWithOpenAiCompatible(
   provider,
-  { systemInstruction, turns, apiKey, fetchImpl = fetch },
+  { systemInstruction, turns, toolDefs, toolRounds, apiKey, fetchImpl = fetch },
 ) {
   const url = getChatCompletionsUrl(provider.baseUrl);
   let response;
@@ -130,7 +178,20 @@ export async function generateWithOpenAiCompatible(
             role: turn.role === "model" ? "assistant" : "user",
             content: turn.text,
           })),
+          ...openAiToolMessages(toolRounds),
         ],
+        ...(toolDefs?.length
+          ? {
+              tools: toolDefs.map((tool) => ({
+                type: "function",
+                function: {
+                  name: tool.name,
+                  description: tool.description,
+                  parameters: tool.parameters,
+                },
+              })),
+            }
+          : {}),
       }),
       signal: getTimeoutSignal(),
     });
@@ -154,7 +215,20 @@ export async function generateWithOpenAiCompatible(
     });
   }
 
-  const text = getTextContent(data?.choices?.[0]?.message?.content);
+  const message = data?.choices?.[0]?.message;
+  const toolCalls = (message?.tool_calls ?? []).map((call) => ({
+    id: call.id,
+    name: call.function?.name,
+    args: parseJsonObject(call.function?.arguments),
+  }));
+  const text = getTextContent(message?.content);
+  if (toolCalls.length) {
+    return {
+      text,
+      toolCalls,
+      usage: toUsage(data?.usage?.prompt_tokens, data?.usage?.completion_tokens),
+    };
+  }
   if (!text) {
     throw new AiProviderError("AI provider returned no text", {
       errorType: "invalid_response",
@@ -173,6 +247,8 @@ export async function generateWithGemini(
     systemInstruction,
     turns,
     googleSearch = true,
+    toolDefs,
+    toolRounds,
     apiKey,
     geminiClientFactory = (key) => new GoogleGenAI({ apiKey: key }),
   },
@@ -187,16 +263,52 @@ export async function generateWithGemini(
     const ai = geminiClientFactory(apiKey);
     const result = await ai.models.generateContent({
       model: provider.model,
-      contents: merged.map((turn) => ({ role: turn.role, parts: [{ text: turn.text }] })),
+      contents: [
+        ...merged.map((turn) => ({ role: turn.role, parts: [{ text: turn.text }] })),
+        ...geminiToolContents(toolRounds),
+      ],
       config: {
         systemInstruction,
-        ...(googleSearch ? { tools: [{ googleSearch: {} }] } : {}),
+        // Gemini rejects built-in googleSearch combined with function calling.
+        ...(toolDefs?.length
+          ? {
+              tools: [
+                {
+                  functionDeclarations: toolDefs.map((tool) => ({
+                    name: tool.name,
+                    description: tool.description,
+                    parametersJsonSchema: tool.parameters,
+                  })),
+                },
+              ],
+            }
+          : googleSearch
+            ? { tools: [{ googleSearch: {} }] }
+            : {}),
       },
     });
+    const parts = result?.candidates?.[0]?.content?.parts ?? [];
+    const toolCalls = parts
+      .filter((part) => part.functionCall)
+      .map((part, index) => ({
+        id: part.functionCall.id || `call_${index}`,
+        name: part.functionCall.name,
+        args: part.functionCall.args ?? {},
+        ...(part.thoughtSignature ? { thoughtSignature: part.thoughtSignature } : {}),
+      }));
+    const usage = toUsage(
+      result?.usageMetadata?.promptTokenCount,
+      result?.usageMetadata?.candidatesTokenCount,
+    );
+    if (toolCalls.length) return { text: "", toolCalls, usage };
     const text = result?.text;
     if (!text) throw new Error("Gemini returned no text");
+    const sources = (result?.candidates?.[0]?.groundingMetadata?.groundingChunks ?? [])
+      .map((chunk) => chunk?.web?.uri)
+      .filter(Boolean);
     return {
       text,
+      ...(sources.length ? { sources } : {}),
       usage: toUsage(
         result?.usageMetadata?.promptTokenCount,
         result?.usageMetadata?.candidatesTokenCount,
@@ -345,7 +457,23 @@ export function createAiProviderService({
     };
   }
 
-  return { generate, testProvider };
+  // Separate Gemini request with only googleSearch on, used by the web_search Tool.
+  async function search(query) {
+    const { providers } = await loadAiConfig(db);
+    const provider = providers.find((candidate) => candidate.type === PROVIDER_TYPES.GEMINI);
+    if (!provider) {
+      throw new AiProviderError("No Gemini provider is available", { errorType: "configuration" });
+    }
+    return generateWithGemini(provider, {
+      systemInstruction: "Answer the query briefly using web search. Keep it under 150 words.",
+      turns: [{ role: "user", text: query }],
+      googleSearch: true,
+      apiKey: getProviderApiKey(provider, encryptionKey),
+      geminiClientFactory,
+    });
+  }
+
+  return { generate, testProvider, search };
 }
 
 export default createAiProviderService;
