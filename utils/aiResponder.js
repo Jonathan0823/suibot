@@ -4,6 +4,10 @@ import splitMessage from "../helper/splitMessage.js";
 import { createRequestId, logAiEvent } from "./ai/observability.js";
 import { sendOperationsAlert } from "./ai/discordAlert.js";
 import { createAiProviderService } from "./ai/providers.js";
+import { createToolLoop } from "./ai/toolLoop.js";
+import { createTools } from "./ai/tools.js";
+import { ensureScrapedCodeCache, getCachedCodesForGame } from "./codeScraper.js";
+import { Wrapper } from "enkanetwork.js";
 import { createConversation } from "./conversation/conversation.js";
 import { createPostgresStore } from "./conversation/postgresStore.js";
 import prisma from "../lib/prisma.js";
@@ -12,9 +16,22 @@ const providerService = createAiProviderService({
   logEvent: logAiEvent,
   alert: sendOperationsAlert,
 });
+const enka = new Wrapper({ cache: true });
+const generateWithTools = createToolLoop({
+  generate: (request) => providerService.generate(request),
+  logEvent: logAiEvent,
+  tools: createTools({
+    search: (query) => providerService.search(query),
+    getCodes: async (game) => {
+      await ensureScrapedCodeCache();
+      return getCachedCodesForGame(game);
+    },
+    getPlayer: (game, uid) => enka[game].getPlayer(uid),
+  }),
+});
 const conversation = createConversation({
   store: createPostgresStore({ prisma }),
-  generate: (request) => providerService.generate(request),
+  generate: generateWithTools,
   logEvent: logAiEvent,
   ...(Number(process.env.CONVERSATION_TOKEN_BUDGET) > 0
     ? { tokenBudget: Number(process.env.CONVERSATION_TOKEN_BUDGET) }
