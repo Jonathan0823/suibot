@@ -1,6 +1,7 @@
 const TIME_ZONE = "Asia/Jakarta";
 const CODE_GAMES = ["gi", "hsr", "zzz", "wuwa", "endfield"];
 const SHOWCASE_GAMES = ["genshin", "starrail"];
+const MAX_CODES_SHOWN = 10;
 
 function formatJakartaTime(date) {
   const parts = Object.fromEntries(
@@ -20,6 +21,25 @@ function formatJakartaTime(date) {
   return `${parts.weekday}, ${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute} (${TIME_ZONE}, UTC+7)`;
 }
 
+const PRIVATE_SHOWCASE_LINE = "Showcase: private or empty — do not guess this player's characters.";
+
+function formatCharacter(character, bonusLabel, bonus) {
+  const parts = [character?.name ?? "Unknown"];
+  if (character?.level != null) parts.push(`Lv.${character.level}`);
+  if (character?.element) parts.push(character.element);
+  if (bonus != null) parts.push(`${bonusLabel}${bonus}`);
+  return `- ${parts.join(", ")}`;
+}
+
+function showcaseLines(characters, bonusLabel, bonusKey) {
+  const list = Array.isArray(characters) ? characters : [];
+  if (!list.length) return [PRIVATE_SHOWCASE_LINE];
+  return [
+    "Showcase characters:",
+    ...list.map((c) => formatCharacter(c, bonusLabel, bonusKey ? c?.[bonusKey] : null)),
+  ];
+}
+
 function summarizePlayer(game, response) {
   const player = response?.player ?? {};
   if (game === "starrail") {
@@ -30,6 +50,7 @@ function summarizePlayer(game, response) {
       `Trailblazer Level: ${player.level}`,
       `Equilibrium Level: ${player.equilibriumLevel}`,
       `Achievements: ${player.recordInfo?.achievementCount}`,
+      ...showcaseLines(response?.characters, "E", "eidolons"),
     ].join("\n");
   }
   const lines = [
@@ -45,6 +66,8 @@ function summarizePlayer(game, response) {
       `Latest Abyss: Floor ${player.abyss.floor} Chamber ${player.abyss.chamber}, ${player.abyss.stars} Stars`,
     );
   }
+  const showConstellations = player.publicConstellations !== false;
+  lines.push(...showcaseLines(player.showcase, "C", showConstellations ? "constellations" : null));
   return lines.join("\n");
 }
 
@@ -62,7 +85,7 @@ export function createTools({ search, getCodes, getPlayer, now = () => new Date(
     {
       name: "web_search",
       description:
-        "Search the web for current information. Returns a short answer and source URLs.",
+        "Search the web for current information, such as news, current events, game updates, or anything that may have changed. Use it instead of answering from memory. Returns a short answer and source URLs.",
       parameters: {
         type: "object",
         properties: { query: { type: "string", description: "What to search for" } },
@@ -75,7 +98,8 @@ export function createTools({ search, getCodes, getPlayer, now = () => new Date(
     },
     {
       name: "get_current_time",
-      description: "Get the current date and time in Asia/Jakarta (UTC+7).",
+      description:
+        "Get the current date and time in Asia/Jakarta (UTC+7). Use whenever the answer depends on the current date or time.",
       parameters: { type: "object", properties: {} },
       async run() {
         return formatJakartaTime(now());
@@ -83,7 +107,8 @@ export function createTools({ search, getCodes, getPlayer, now = () => new Date(
     },
     {
       name: "get_redeem_codes",
-      description: "List the currently active redeem codes for a game.",
+      description:
+        "List the currently active redeem codes for a game. Always call this whenever a member asks about redeem codes; never list codes from memory, since codes expire. Game enum: gi = Genshin Impact, hsr = Honkai Star Rail, zzz = Zenless Zone Zero, wuwa = Wuthering Waves, endfield = Arknights: Endfield. For any other game, tell the member you can't check it and do not list codes.",
       parameters: {
         type: "object",
         properties: { game: { type: "string", enum: CODE_GAMES } },
@@ -92,12 +117,19 @@ export function createTools({ search, getCodes, getPlayer, now = () => new Date(
       async run({ game }) {
         if (!CODE_GAMES.includes(game)) throw new Error("unknown game");
         const codes = await getCodes(game);
-        return codes.length ? codes.join("\n") : "There are no active codes for this game.";
+        if (!codes.length)
+          return "There are no active codes for this game. Tell the member there are none right now; do not make any up.";
+        // getCodes is oldest first; show the newest codes, newest first.
+        const lines = codes.slice(-MAX_CODES_SHOWN).reverse();
+        if (codes.length > MAX_CODES_SHOWN)
+          lines.push(`Showing the ${MAX_CODES_SHOWN} newest of ${codes.length} active codes.`);
+        return lines.join("\n");
       },
     },
     {
       name: "get_player_showcase",
-      description: "Look up a Genshin Impact or Honkai Star Rail player profile by UID.",
+      description:
+        "Look up a Genshin Impact or Honkai Star Rail player profile and showcase characters (name, level, element, constellations or eidolons) by UID. Use only a UID the member gave in this Conversation; if none was given, ask them for it. Never guess a UID, player stats, or characters.",
       parameters: {
         type: "object",
         properties: {

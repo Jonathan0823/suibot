@@ -45,11 +45,45 @@ describe("get_redeem_codes", () => {
     expect(out).toContain("BBB");
   });
 
+  it("lists the newest codes first", async () => {
+    const getCodes = vi.fn().mockResolvedValue(["OLD", "MID", "NEW"]);
+    const out = await toolsWith({ getCodes }).get_redeem_codes.run({ game: "gi" });
+    expect(out).toBe("NEW\nMID\nOLD");
+  });
+
+  it("caps the list at the 10 newest codes and says how many there were", async () => {
+    const codes = Array.from({ length: 12 }, (_, i) => `C${i + 1}`);
+    const out = await toolsWith({
+      getCodes: vi.fn().mockResolvedValue(codes),
+    }).get_redeem_codes.run({
+      game: "gi",
+    });
+    const lines = out.split("\n");
+    expect(lines).toHaveLength(11);
+    expect(lines[0]).toBe("C12");
+    expect(lines[9]).toBe("C3");
+    expect(out).not.toContain("C1\n");
+    expect(out).not.toContain("C2\n");
+    expect(lines[10]).toBe("Showing the 10 newest of 12 active codes.");
+  });
+
+  it("omits the count line when there are 10 or fewer codes", async () => {
+    const codes = Array.from({ length: 10 }, (_, i) => `C${i + 1}`);
+    const out = await toolsWith({
+      getCodes: vi.fn().mockResolvedValue(codes),
+    }).get_redeem_codes.run({
+      game: "gi",
+    });
+    expect(out.split("\n")).toHaveLength(10);
+    expect(out).not.toMatch(/Showing the/);
+  });
+
   it("says so when there are no codes", async () => {
     const out = await toolsWith({ getCodes: vi.fn().mockResolvedValue([]) }).get_redeem_codes.run({
       game: "hsr",
     });
     expect(out).toMatch(/no active codes/i);
+    expect(out).toContain("do not make any up");
   });
 
   it("rejects an unknown game", async () => {
@@ -103,6 +137,70 @@ describe("get_player_showcase", () => {
     expect(out).not.toContain("World Level");
   });
 
+  it("lists Genshin showcase characters", async () => {
+    const getPlayer = vi.fn().mockResolvedValue({
+      uid: "1",
+      player: {
+        username: "T",
+        showcase: [
+          { name: "Furina", level: 90, element: "Hydro", constellations: 2 },
+          { name: "Mystery" },
+        ],
+      },
+    });
+    const out = await toolsWith({ getPlayer }).get_player_showcase.run({
+      game: "genshin",
+      uid: "1",
+    });
+    expect(out).toContain("Showcase characters:");
+    expect(out).toContain("- Furina, Lv.90, Hydro, C2");
+    expect(out).toContain("- Mystery");
+    expect(out).not.toMatch(/Mystery.*undefined/);
+  });
+
+  it("omits constellations when a Genshin player hides them", async () => {
+    const getPlayer = vi.fn().mockResolvedValue({
+      uid: "1",
+      player: {
+        username: "T",
+        publicConstellations: false,
+        showcase: [{ name: "Furina", level: 90, element: "Hydro", constellations: 0 }],
+      },
+    });
+    const out = await toolsWith({ getPlayer }).get_player_showcase.run({
+      game: "genshin",
+      uid: "1",
+    });
+    expect(out).toContain("- Furina, Lv.90, Hydro");
+    expect(out).not.toContain("C0");
+    expect(out).not.toMatch(/Hydro, C\d/);
+  });
+
+  it("lists Star Rail characters with eidolons", async () => {
+    const getPlayer = vi.fn().mockResolvedValue({
+      uid: "2",
+      player: { username: "T" },
+      characters: [{ name: "Kafka", level: 80, element: "Lightning", eidolons: 1 }],
+    });
+    const out = await toolsWith({ getPlayer }).get_player_showcase.run({
+      game: "starrail",
+      uid: "2",
+    });
+    expect(out).toContain("- Kafka, Lv.80, Lightning, E1");
+  });
+
+  it("says the showcase is private or empty instead of leaving it blank", async () => {
+    const getPlayer = vi
+      .fn()
+      .mockResolvedValue({ uid: "1", player: { username: "T", showcase: [] } });
+    const out = await toolsWith({ getPlayer }).get_player_showcase.run({
+      game: "genshin",
+      uid: "1",
+    });
+    expect(out).toContain("private or empty");
+    expect(out).not.toContain("Showcase characters:");
+  });
+
   it("rejects an unknown game", async () => {
     await expect(toolsWith().get_player_showcase.run({ game: "zzz", uid: "1" })).rejects.toThrow();
   });
@@ -112,5 +210,18 @@ describe("get_player_showcase", () => {
     await expect(
       toolsWith({ getPlayer }).get_player_showcase.run({ game: "starrail", uid: "1" }),
     ).rejects.toThrow();
+  });
+});
+
+describe("Tool descriptions", () => {
+  it("tells the model to call get_redeem_codes and spells out the game enum", () => {
+    const desc = toolsWith().get_redeem_codes.description;
+    expect(desc).toContain("Genshin Impact");
+    expect(desc).toContain("Arknights: Endfield");
+  });
+
+  it("tells the model to use web_search instead of memory for current information", () => {
+    const desc = toolsWith().web_search.description;
+    expect(desc).toMatch(/instead of answering from memory/);
   });
 });
