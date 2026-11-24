@@ -94,7 +94,9 @@ export function createTools({ search, getCodes, getPlayer, now = () => new Date(
       async run({ game }) {
         if (!CODE_GAMES.includes(game)) throw new Error("unknown game");
         const codes = await getCodes(game);
-        return codes.length ? codes.join("\n") : "There are no active codes for this game.";
+        return codes.length
+          ? codes.join("\n")
+          : "There are no active codes for this game. Tell the member there are none right now; do not make any up.";
       },
     },
     {

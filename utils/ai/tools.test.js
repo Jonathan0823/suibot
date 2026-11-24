@@ -50,6 +50,7 @@ describe("get_redeem_codes", () => {
       game: "hsr",
     });
     expect(out).toMatch(/no active codes/i);
+    expect(out).toContain("do not make any up");
   });
 
   it("rejects an unknown game", async () => {

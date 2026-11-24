@@ -27,8 +27,8 @@ export function createToolLoop({ generate, tools, logEvent = () => {} }) {
     } catch (error) {
       ok = false;
       output = error?.invalid
-        ? `Tool error: ${call.name} received invalid arguments`
-        : `Tool error: ${call.name} failed${error?.userMessage ? ` (${error.userMessage})` : ""}`;
+        ? `Tool error: ${call.name} received invalid arguments. Tell the member you couldn't check right now; do not guess.`
+        : `Tool error: ${call.name} failed${error?.userMessage ? ` (${error.userMessage})` : ""}. Tell the member you couldn't check right now; do not guess.`;
     }
     logEvent("ai_tool_use", {
       requestId,

@@ -105,6 +105,7 @@ describe("tool loop", () => {
     await loop({ requestId: "r1", turns: [{ role: "user", text: "hi" }] });
 
     expect(calls[1].toolRounds[0].results[0].output).toMatch(/^Tool error/);
+    expect(calls[1].toolRounds[0].results[0].output).toContain("do not guess");
     expect(logEvent).toHaveBeenCalledWith("ai_tool_use", {
       requestId: "r1",
       tool: "echo",
@@ -124,7 +125,12 @@ describe("tool loop", () => {
     await loop({ turns: [{ role: "user", text: "hi" }] });
     expect(run).not.toHaveBeenCalled();
     expect(calls[1].toolRounds[0].results).toEqual([
-      { id: "x", name: "echo", output: "Tool error: echo received invalid arguments" },
+      {
+        id: "x",
+        name: "echo",
+        output:
+          "Tool error: echo received invalid arguments. Tell the member you couldn't check right now; do not guess.",
+      },
     ]);
   });
 
