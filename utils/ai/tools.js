@@ -62,7 +62,7 @@ export function createTools({ search, getCodes, getPlayer, now = () => new Date(
     {
       name: "web_search",
       description:
-        "Search the web for current information. Returns a short answer and source URLs.",
+        "Search the web for current information, such as news, current events, game updates, or anything that may have changed. Use it instead of answering from memory. Returns a short answer and source URLs.",
       parameters: {
         type: "object",
         properties: { query: { type: "string", description: "What to search for" } },
@@ -75,7 +75,8 @@ export function createTools({ search, getCodes, getPlayer, now = () => new Date(
     },
     {
       name: "get_current_time",
-      description: "Get the current date and time in Asia/Jakarta (UTC+7).",
+      description:
+        "Get the current date and time in Asia/Jakarta (UTC+7). Use whenever the answer depends on the current date or time.",
       parameters: { type: "object", properties: {} },
       async run() {
         return formatJakartaTime(now());
@@ -83,7 +84,8 @@ export function createTools({ search, getCodes, getPlayer, now = () => new Date(
     },
     {
       name: "get_redeem_codes",
-      description: "List the currently active redeem codes for a game.",
+      description:
+        "List the currently active redeem codes for a game. Always call this whenever a member asks about redeem codes; never list codes from memory, since codes expire. Game enum: gi = Genshin Impact, hsr = Honkai Star Rail, zzz = Zenless Zone Zero, wuwa = Wuthering Waves, endfield = Arknights: Endfield. For any other game, tell the member you can't check it and do not list codes.",
       parameters: {
         type: "object",
         properties: { game: { type: "string", enum: CODE_GAMES } },
@@ -97,7 +99,8 @@ export function createTools({ search, getCodes, getPlayer, now = () => new Date(
     },
     {
       name: "get_player_showcase",
-      description: "Look up a Genshin Impact or Honkai Star Rail player profile by UID.",
+      description:
+        "Look up a Genshin Impact or Honkai Star Rail player profile by UID. Use only a UID the member gave in this Conversation; if none was given, ask them for it. Never guess a UID, player stats, or characters.",
       parameters: {
         type: "object",
         properties: {

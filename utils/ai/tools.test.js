@@ -114,3 +114,16 @@ describe("get_player_showcase", () => {
     ).rejects.toThrow();
   });
 });
+
+describe("Tool descriptions", () => {
+  it("tells the model to call get_redeem_codes and spells out the game enum", () => {
+    const desc = toolsWith().get_redeem_codes.description;
+    expect(desc).toContain("Genshin Impact");
+    expect(desc).toContain("Arknights: Endfield");
+  });
+
+  it("tells the model to use web_search instead of memory for current information", () => {
+    const desc = toolsWith().web_search.description;
+    expect(desc).toMatch(/instead of answering from memory/);
+  });
+});
