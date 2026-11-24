@@ -104,6 +104,52 @@ describe("get_player_showcase", () => {
     expect(out).not.toContain("World Level");
   });
 
+  it("lists Genshin showcase characters", async () => {
+    const getPlayer = vi.fn().mockResolvedValue({
+      uid: "1",
+      player: {
+        username: "T",
+        showcase: [
+          { name: "Furina", level: 90, element: "Hydro", constellations: 2 },
+          { name: "Mystery" },
+        ],
+      },
+    });
+    const out = await toolsWith({ getPlayer }).get_player_showcase.run({
+      game: "genshin",
+      uid: "1",
+    });
+    expect(out).toContain("Showcase characters:");
+    expect(out).toContain("- Furina, Lv.90, Hydro, C2");
+    expect(out).toContain("- Mystery");
+    expect(out).not.toMatch(/Mystery.*undefined/);
+  });
+
+  it("lists Star Rail characters with eidolons", async () => {
+    const getPlayer = vi.fn().mockResolvedValue({
+      uid: "2",
+      player: { username: "T" },
+      characters: [{ name: "Kafka", level: 80, element: "Lightning", eidolons: 1 }],
+    });
+    const out = await toolsWith({ getPlayer }).get_player_showcase.run({
+      game: "starrail",
+      uid: "2",
+    });
+    expect(out).toContain("- Kafka, Lv.80, Lightning, E1");
+  });
+
+  it("says the showcase is private or empty instead of leaving it blank", async () => {
+    const getPlayer = vi
+      .fn()
+      .mockResolvedValue({ uid: "1", player: { username: "T", showcase: [] } });
+    const out = await toolsWith({ getPlayer }).get_player_showcase.run({
+      game: "genshin",
+      uid: "1",
+    });
+    expect(out).toContain("private or empty");
+    expect(out).not.toContain("Showcase characters:");
+  });
+
   it("rejects an unknown game", async () => {
     await expect(toolsWith().get_player_showcase.run({ game: "zzz", uid: "1" })).rejects.toThrow();
   });

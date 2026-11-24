@@ -20,6 +20,25 @@ function formatJakartaTime(date) {
   return `${parts.weekday}, ${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute} (${TIME_ZONE}, UTC+7)`;
 }
 
+const PRIVATE_SHOWCASE_LINE = "Showcase: private or empty — do not guess this player's characters.";
+
+function formatCharacter(character, bonusLabel, bonus) {
+  const parts = [character?.name ?? "Unknown"];
+  if (character?.level != null) parts.push(`Lv.${character.level}`);
+  if (character?.element) parts.push(character.element);
+  if (bonus != null) parts.push(`${bonusLabel}${bonus}`);
+  return `- ${parts.join(", ")}`;
+}
+
+function showcaseLines(characters, bonusLabel, bonusKey) {
+  const list = Array.isArray(characters) ? characters : [];
+  if (!list.length) return [PRIVATE_SHOWCASE_LINE];
+  return [
+    "Showcase characters:",
+    ...list.map((c) => formatCharacter(c, bonusLabel, c?.[bonusKey])),
+  ];
+}
+
 function summarizePlayer(game, response) {
   const player = response?.player ?? {};
   if (game === "starrail") {
@@ -30,6 +49,7 @@ function summarizePlayer(game, response) {
       `Trailblazer Level: ${player.level}`,
       `Equilibrium Level: ${player.equilibriumLevel}`,
       `Achievements: ${player.recordInfo?.achievementCount}`,
+      ...showcaseLines(response?.characters, "E", "eidolons"),
     ].join("\n");
   }
   const lines = [
@@ -45,6 +65,7 @@ function summarizePlayer(game, response) {
       `Latest Abyss: Floor ${player.abyss.floor} Chamber ${player.abyss.chamber}, ${player.abyss.stars} Stars`,
     );
   }
+  lines.push(...showcaseLines(player.showcase, "C", "constellations"));
   return lines.join("\n");
 }
 
@@ -102,7 +123,7 @@ export function createTools({ search, getCodes, getPlayer, now = () => new Date(
     {
       name: "get_player_showcase",
       description:
-        "Look up a Genshin Impact or Honkai Star Rail player profile by UID. Use only a UID the member gave in this Conversation; if none was given, ask them for it. Never guess a UID, player stats, or characters.",
+        "Look up a Genshin Impact or Honkai Star Rail player profile and showcase characters (name, level, element, constellations or eidolons) by UID. Use only a UID the member gave in this Conversation; if none was given, ask them for it. Never guess a UID, player stats, or characters.",
       parameters: {
         type: "object",
         properties: {
