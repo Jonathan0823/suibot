@@ -1,6 +1,7 @@
 const TIME_ZONE = "Asia/Jakarta";
 const CODE_GAMES = ["gi", "hsr", "zzz", "wuwa", "endfield"];
 const SHOWCASE_GAMES = ["genshin", "starrail"];
+const MAX_CODES_SHOWN = 10;
 
 function formatJakartaTime(date) {
   const parts = Object.fromEntries(
@@ -116,9 +117,13 @@ export function createTools({ search, getCodes, getPlayer, now = () => new Date(
       async run({ game }) {
         if (!CODE_GAMES.includes(game)) throw new Error("unknown game");
         const codes = await getCodes(game);
-        return codes.length
-          ? codes.join("\n")
-          : "There are no active codes for this game. Tell the member there are none right now; do not make any up.";
+        if (!codes.length)
+          return "There are no active codes for this game. Tell the member there are none right now; do not make any up.";
+        // getCodes is oldest first; show the newest codes, newest first.
+        const lines = codes.slice(-MAX_CODES_SHOWN).reverse();
+        if (codes.length > MAX_CODES_SHOWN)
+          lines.push(`Showing the ${MAX_CODES_SHOWN} newest of ${codes.length} active codes.`);
+        return lines.join("\n");
       },
     },
     {

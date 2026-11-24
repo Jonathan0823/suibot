@@ -45,6 +45,39 @@ describe("get_redeem_codes", () => {
     expect(out).toContain("BBB");
   });
 
+  it("lists the newest codes first", async () => {
+    const getCodes = vi.fn().mockResolvedValue(["OLD", "MID", "NEW"]);
+    const out = await toolsWith({ getCodes }).get_redeem_codes.run({ game: "gi" });
+    expect(out).toBe("NEW\nMID\nOLD");
+  });
+
+  it("caps the list at the 10 newest codes and says how many there were", async () => {
+    const codes = Array.from({ length: 12 }, (_, i) => `C${i + 1}`);
+    const out = await toolsWith({
+      getCodes: vi.fn().mockResolvedValue(codes),
+    }).get_redeem_codes.run({
+      game: "gi",
+    });
+    const lines = out.split("\n");
+    expect(lines).toHaveLength(11);
+    expect(lines[0]).toBe("C12");
+    expect(lines[9]).toBe("C3");
+    expect(out).not.toContain("C1\n");
+    expect(out).not.toContain("C2\n");
+    expect(lines[10]).toBe("Showing the 10 newest of 12 active codes.");
+  });
+
+  it("omits the count line when there are 10 or fewer codes", async () => {
+    const codes = Array.from({ length: 10 }, (_, i) => `C${i + 1}`);
+    const out = await toolsWith({
+      getCodes: vi.fn().mockResolvedValue(codes),
+    }).get_redeem_codes.run({
+      game: "gi",
+    });
+    expect(out.split("\n")).toHaveLength(10);
+    expect(out).not.toMatch(/Showing the/);
+  });
+
   it("says so when there are no codes", async () => {
     const out = await toolsWith({ getCodes: vi.fn().mockResolvedValue([]) }).get_redeem_codes.run({
       game: "hsr",
