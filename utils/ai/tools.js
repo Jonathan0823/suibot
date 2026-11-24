@@ -35,7 +35,7 @@ function showcaseLines(characters, bonusLabel, bonusKey) {
   if (!list.length) return [PRIVATE_SHOWCASE_LINE];
   return [
     "Showcase characters:",
-    ...list.map((c) => formatCharacter(c, bonusLabel, c?.[bonusKey])),
+    ...list.map((c) => formatCharacter(c, bonusLabel, bonusKey ? c?.[bonusKey] : null)),
   ];
 }
 
@@ -65,7 +65,8 @@ function summarizePlayer(game, response) {
       `Latest Abyss: Floor ${player.abyss.floor} Chamber ${player.abyss.chamber}, ${player.abyss.stars} Stars`,
     );
   }
-  lines.push(...showcaseLines(player.showcase, "C", "constellations"));
+  const showConstellations = player.publicConstellations !== false;
+  lines.push(...showcaseLines(player.showcase, "C", showConstellations ? "constellations" : null));
   return lines.join("\n");
 }
 

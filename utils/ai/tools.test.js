@@ -125,6 +125,24 @@ describe("get_player_showcase", () => {
     expect(out).not.toMatch(/Mystery.*undefined/);
   });
 
+  it("omits constellations when a Genshin player hides them", async () => {
+    const getPlayer = vi.fn().mockResolvedValue({
+      uid: "1",
+      player: {
+        username: "T",
+        publicConstellations: false,
+        showcase: [{ name: "Furina", level: 90, element: "Hydro", constellations: 0 }],
+      },
+    });
+    const out = await toolsWith({ getPlayer }).get_player_showcase.run({
+      game: "genshin",
+      uid: "1",
+    });
+    expect(out).toContain("- Furina, Lv.90, Hydro");
+    expect(out).not.toContain("C0");
+    expect(out).not.toMatch(/Hydro, C\d/);
+  });
+
   it("lists Star Rail characters with eidolons", async () => {
     const getPlayer = vi.fn().mockResolvedValue({
       uid: "2",
