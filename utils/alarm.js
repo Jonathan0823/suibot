@@ -50,31 +50,6 @@ function setupDailyAlarm(client, type) {
   console.log(`New cron job for ${type} started.`);
 }
 
-async function firstDayOfMonthAlarm(client, channelIds) {
-  if (!Array.isArray(channelIds)) {
-    console.error("channelId must be an array of IDs.");
-    return;
-  }
-
-  cron.schedule("0 0 1 * *", async () => {
-    const messagePromises = channelIds.map(async (id) => {
-      try {
-        const channel = await client.channels.fetch(id);
-        if (channel) {
-          channel.send(
-            "https://media.tenor.com/1aFbnAIg-n8AAAAM/wake-up-first-day.gif",
-          );
-        }
-      } catch (err) {
-        console.error("Error sending first day of month alarm:", err);
-      }
-    });
-
-    await Promise.all(messagePromises);
-    conole.log("First day of month alarm sent to all channels.");
-  });
-}
-
 function buildHoyoActionRow() {
   const button1 = new ButtonBuilder()
     .setEmoji("<:genshinimpact:1324355501466849331> ")
@@ -177,7 +152,7 @@ async function triggerAlarm(client, channelIds, type) {
     const channel = await client.channels.fetch(id);
     if (!channel) {
       console.error(`Channel with ID ${id} not found.`);
-      return;
+      continue;
     }
 
     if (!channel.isTextBased() || !channel.viewable) {
