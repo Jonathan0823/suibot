@@ -7,7 +7,7 @@ import { createAiProviderService } from "./ai/providers.js";
 import { createToolLoop } from "./ai/toolLoop.js";
 import { createTools } from "./ai/tools.js";
 import { ensureScrapedCodeCache, getCachedCodesForGame } from "./codeScraper.js";
-import { Wrapper } from "enkanetwork.js";
+import { getEnkaService } from "./enka/enkaClient.js";
 import { createConversation } from "./conversation/conversation.js";
 import { createPostgresStore } from "./conversation/postgresStore.js";
 import prisma from "../lib/prisma.js";
@@ -16,7 +16,6 @@ const providerService = createAiProviderService({
   logEvent: logAiEvent,
   alert: sendOperationsAlert,
 });
-const enka = new Wrapper({ cache: true });
 const generateWithTools = createToolLoop({
   generate: (request) => providerService.generate(request),
   logEvent: logAiEvent,
@@ -26,7 +25,7 @@ const generateWithTools = createToolLoop({
       await ensureScrapedCodeCache();
       return getCachedCodesForGame(game);
     },
-    getPlayer: (game, uid) => enka[game].getPlayer(uid),
+    getPlayer: (game, uid) => getEnkaService().getPlayer(game, uid),
   }),
 });
 const tokenBudget = Number(process.env.CONVERSATION_TOKEN_BUDGET);
