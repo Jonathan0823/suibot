@@ -5,8 +5,8 @@
   "type": "module",
   "scripts": {
     "test": "vitest",
-    "test:ci": "vitest run --exclude tests/integration.test.js --exclude tests/codeScraper.test.js",
-    "test:integration": "vitest run tests/integration.test.js tests/codeScraper.test.js",
+    "test:ci": "vitest run --exclude src/modules/redeemCodes/integration.test.js --exclude src/modules/redeemCodes/scraper.network.test.js",
+    "test:integration": "vitest run src/modules/redeemCodes/integration.test.js src/modules/redeemCodes/scraper.network.test.js",
     "coverage": "vitest run --coverage",
     "lint": "biome lint .",
     "format": "biome format --write .",
