@@ -69,7 +69,7 @@ describe("redeemCodes", () => {
     expect(fetch).toHaveBeenCalledTimes(5);
   });
 
-  it("broadcasts to registered channels", async () => {
+  it("broadcasts to registered channels and persists the codes", async () => {
     const cron = { schedule: vi.fn(() => ({ stop: vi.fn() })) };
     const channel = { isTextBased: () => true, send: vi.fn() };
     const client = { channels: { fetch: vi.fn().mockResolvedValue(channel) } };
@@ -83,6 +83,31 @@ describe("redeemCodes", () => {
     expect(client.channels.fetch).toHaveBeenCalledWith("c1");
     expect(channel.send).toHaveBeenCalledTimes(2);
     expect(channel.send).toHaveBeenLastCalledWith("ABC");
+    expect(prisma.scrapedCode.createMany).toHaveBeenCalledWith({
+      data: [{ code: "ABC", game: "gi", rewards: "100 Primogems", status: "active" }],
+      skipDuplicates: true,
+    });
+    expect(await redeem.getActiveCodes("gi")).toEqual(["ABC"]);
+  });
+
+  it("does not report failure when persisting fails after a successful send", async () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    prisma.scrapedCode.createMany.mockRejectedValue(new Error("db down"));
+    const cron = { schedule: vi.fn(() => ({ stop: vi.fn() })) };
+    const channel = { isTextBased: () => true, send: vi.fn() };
+    const client = { channels: { fetch: vi.fn().mockResolvedValue(channel) } };
+    vi.useFakeTimers();
+    const redeem = createRedeemCodes({ prisma, fetch: emptyFetch(), cron });
+    await redeem.start(client);
+    vi.useRealTimers();
+
+    await expect(
+      redeem.broadcast("gi", [{ code: "ABC", value: "100 Primogems" }]),
+    ).resolves.toBeUndefined();
+
+    expect(channel.send).toHaveBeenCalledTimes(2);
+    expect(consoleError).toHaveBeenCalled();
+    consoleError.mockRestore();
   });
 
   it("broadcasts only codes the scraper finds new", async () => {

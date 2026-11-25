@@ -27,7 +27,7 @@ export function createRedeemCodes({
   let job = null;
 
   /**
-   * Send codes to every registered channel for the game.
+   * Send codes to every registered channel for the game, then persist them.
    * @param {string} game
    * @param {Array<{code: string, rewards?: string, value?: string}>} codes
    * @param {{ client?: import('discord.js').Client, autoScraped?: boolean }} [options]
@@ -61,6 +61,15 @@ export function createRedeemCodes({
       }
     }
 
+    try {
+      await store.ensureLoaded();
+      await store.save(
+        game,
+        codes.map((c) => ({ code: c.code, rewards: c.rewards ?? c.value })),
+      );
+    } catch (error) {
+      console.error(`Failed to save ${game} codes after sending:`, error);
+    }
   }
 
   async function fetchAllNew() {
@@ -98,7 +107,6 @@ export function createRedeemCodes({
         if (codes.length > 0) {
           console.log(`[CodeScraper] Found ${codes.length} new ${game} codes`);
           await broadcast(game, codes, { autoScraped: true });
-          await store.save(game, codes);
         }
       }
 
