@@ -111,8 +111,36 @@ describe("tool loop", () => {
       tool: "echo",
       durationMs: expect.any(Number),
       ok: false,
+      errorMessage: "boom secret",
+      errorType: "Error",
     });
-    expect(JSON.stringify(logEvent.mock.calls)).not.toContain("boom");
+  });
+
+  it("logs the message, name and HTTP status of a failing Tool", async () => {
+    const failing = {
+      ...echoTool,
+      run: async () => {
+        throw Object.assign(new Error("Request to enka.network failed"), {
+          name: "UserNotFoundError",
+          statusCode: 404,
+        });
+      },
+    };
+    const { generate } = scripted(call("a"), { text: "sorry" });
+    const logEvent = vi.fn();
+    const loop = createToolLoop({ generate, tools: [failing], logEvent });
+
+    await loop({ requestId: "r1", turns: [{ role: "user", text: "hi" }] });
+
+    expect(logEvent).toHaveBeenCalledWith("ai_tool_use", {
+      requestId: "r1",
+      tool: "echo",
+      durationMs: expect.any(Number),
+      ok: false,
+      errorMessage: "Request to enka.network failed",
+      errorType: "UserNotFoundError",
+      statusCode: 404,
+    });
   });
 
   it("does not run a Tool whose arguments were malformed and reports an error result", async () => {
