@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { createRouter } from "./router.js";
 
-const makeDeps = ({ matched = false } = {}) => {
+const makeDeps = ({ matched = false, admin = true } = {}) => {
   const calls = [];
   const deps = {
     triggerWords: { match: vi.fn(async () => (calls.push("trigger"), matched)) },
@@ -9,6 +9,7 @@ const makeDeps = ({ matched = false } = {}) => {
     personaResponder: { reply: vi.fn(async () => calls.push("persona")) },
     alarms: { fire: vi.fn(async () => calls.push("alarm")) },
     slashCommands: [],
+    isAdmin: vi.fn(() => admin),
   };
   return { deps, calls };
 };
@@ -62,7 +63,7 @@ describe("router messages", () => {
     expect(m.reply).toHaveBeenCalledWith("There was an error executing that command!");
   });
 
-  it("fires debug alarms before trigger words", async () => {
+  it("fires debug alarms for admins only, before trigger words", async () => {
     const { deps, calls } = makeDeps();
     const router = createRouter(deps);
     await router.onMessage(msg("!alarm"));
@@ -70,6 +71,10 @@ describe("router messages", () => {
     expect(calls).toEqual(["alarm", "alarm"]);
     expect(deps.alarms.fire.mock.calls.map((c) => c[0])).toEqual(["hoyo", "wuwa"]);
     expect(deps.alarms.fire.mock.calls[0][1]).toEqual(["ch"]);
+
+    const denied = makeDeps({ admin: false });
+    await createRouter(denied.deps).onMessage(msg("!alarm"));
+    expect(denied.deps.alarms.fire).not.toHaveBeenCalled();
   });
 });
 

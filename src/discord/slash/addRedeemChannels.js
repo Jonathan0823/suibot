@@ -1,27 +1,20 @@
 import { MessageFlagsBitField, SlashCommandBuilder } from "discord.js";
 import redeemCodes from "../../modules/redeemCodes/index.js";
+import { isAdmin } from "../auth.js";
 
 export default {
   data: new SlashCommandBuilder()
     .setName("addredeemchannels")
     .setDescription("Add channels to redeem code tracking.")
     .addStringOption((option) =>
-      option
-        .setName("channel")
-        .setDescription("The channel to add.")
-        .setRequired(true),
+      option.setName("channel").setDescription("The channel to add.").setRequired(true),
     )
     .addStringOption((option) =>
-      option
-        .setName("game")
-        .setDescription("The game to add.")
-        .setRequired(true),
+      option.setName("game").setDescription("The game to add.").setRequired(true),
     ),
 
   async execute(interaction) {
-    const sender = interaction.user.username;
-
-    if (sender !== "lynz727wysi") {
+    if (!isAdmin(interaction.user)) {
       await interaction.reply({
         content: "You are not authorized to use this command.",
         flags: MessageFlagsBitField.Flags.Ephemeral,

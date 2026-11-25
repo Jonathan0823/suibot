@@ -1,8 +1,4 @@
-import {
-  EmbedBuilder,
-  MessageFlagsBitField,
-  SlashCommandBuilder,
-} from "discord.js";
+import { EmbedBuilder, MessageFlagsBitField, SlashCommandBuilder } from "discord.js";
 import getRandomColor from "../../utils/randomColor.js";
 
 export default {

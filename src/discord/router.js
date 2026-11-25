@@ -8,6 +8,7 @@ import { MessageFlagsBitField } from "discord.js";
  *  personaResponder: { reply: Function },
  *  alarms: { fire: Function },
  *  slashCommands: Array<any>,
+ *  isAdmin: (user: any) => boolean,
  * }} deps
  */
 export function createRouter({
@@ -16,6 +17,7 @@ export function createRouter({
   personaResponder,
   alarms,
   slashCommands,
+  isAdmin,
 }) {
   const personaMap = new Map(personas.map((persona) => [persona.trigger, persona]));
   const slashMap = new Map(slashCommands.map((command) => [command.data.name, command]));
@@ -50,7 +52,7 @@ export function createRouter({
   const routeDebugAlarm = async (message) => {
     const type =
       message.content === "!alarm" ? "hoyo" : message.content === "!alarmwuwa" ? "wuwa" : null;
-    if (!type) return false;
+    if (!type || !isAdmin(message.author)) return false;
 
     await alarms.fire(type, [message.channel.id], message.client);
     message.reply("Alarm triggered for testing!");

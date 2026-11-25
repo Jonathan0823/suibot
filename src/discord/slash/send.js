@@ -1,9 +1,6 @@
-import {
-  SlashCommandBuilder,
-  MessageFlagsBitField,
-  AttachmentBuilder,
-} from "discord.js";
+import { SlashCommandBuilder, MessageFlagsBitField, AttachmentBuilder } from "discord.js";
 import downloadFile from "../../lib/downloadFile.js";
+import { isAdmin } from "../auth.js";
 
 export default {
   data: new SlashCommandBuilder()
@@ -11,10 +8,9 @@ export default {
     .setDescription("Send a message to a specified channel"),
 
   async execute(interaction) {
-    const sender = interaction.user.username;
     const currentChannel = interaction.channel;
 
-    if (sender !== "lynz727wysi") {
+    if (!isAdmin(interaction.user)) {
       await interaction.reply({
         content: "You are not authorized to use this command.",
         flags: MessageFlagsBitField.Flags.Ephemeral,
@@ -24,8 +20,7 @@ export default {
 
     try {
       await interaction.reply({
-        content:
-          "Please enter the message you want to send. Type 'c' to cancel.",
+        content: "Please enter the message you want to send. Type 'c' to cancel.",
         flags: MessageFlagsBitField.Flags.Ephemeral,
       });
 
@@ -45,12 +40,10 @@ export default {
         return;
       }
 
-      const attachments = collectedMessage
-        .first()
-        .attachments.map((attachment) => ({
-          url: attachment.url,
-          name: attachment.name,
-        }));
+      const attachments = collectedMessage.first().attachments.map((attachment) => ({
+        url: attachment.url,
+        name: attachment.name,
+      }));
 
       const downloadedImages = await Promise.all(
         attachments.map(async ({ url, name }) => {
@@ -86,12 +79,9 @@ export default {
       const ArrayChannelId = channelId.split(" ");
 
       ArrayChannelId.forEach(async (channelId) => {
-        const targetChannel =
-          await interaction.client.channels.fetch(channelId);
+        const targetChannel = await interaction.client.channels.fetch(channelId);
         if (!targetChannel?.isTextBased()) {
-          await interaction.editReply(
-            "Error: The provided channel ID is invalid.",
-          );
+          await interaction.editReply("Error: The provided channel ID is invalid.");
           return;
         }
 
@@ -104,13 +94,9 @@ export default {
       await interaction.editReply("Message sent successfully!");
     } catch (error) {
       if (error.message === "time") {
-        await interaction.editReply(
-          "Time expired! Please try the command again.",
-        );
+        await interaction.editReply("Time expired! Please try the command again.");
       } else if (error.name === "DiscordAPIError") {
-        await interaction.editReply(
-          "Error: Could not find or access the specified channel.",
-        );
+        await interaction.editReply("Error: Could not find or access the specified channel.");
       } else {
         console.error("Unexpected error:", error);
         await interaction.editReply("An unexpected error occurred.");

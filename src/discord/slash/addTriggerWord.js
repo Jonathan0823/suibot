@@ -1,5 +1,6 @@
 import { SlashCommandBuilder, MessageFlagsBitField } from "discord.js";
 import triggerWords from "../../modules/triggerWords/index.js";
+import { isAdmin } from "../auth.js";
 
 export default {
   data: new SlashCommandBuilder()
@@ -40,7 +41,7 @@ export default {
     ),
 
   async execute(interaction) {
-    if (interaction.user.username !== "lynz727wysi") {
+    if (!isAdmin(interaction.user)) {
       await interaction.reply({
         content: "You are not authorized to use this command.",
         flags: MessageFlagsBitField.Flags.Ephemeral,

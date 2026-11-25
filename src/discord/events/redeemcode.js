@@ -2,7 +2,7 @@ import "dotenv/config";
 import { removeWhitespace } from "../../utils/titleCase.js";
 import redeemCodes from "../../modules/redeemCodes/index.js";
 
-const AUTHORIZED_USER = "lynz727wysi";
+import { isAdmin } from "../auth.js";
 
 const parseMessage = (content) => {
   // Expected format: code1 item1,code2 item2
@@ -26,7 +26,7 @@ export default {
     if (!gameType) return;
 
     // Check if sender is authorized
-    if (message.author.username !== AUTHORIZED_USER) {
+    if (!isAdmin(message.author)) {
       await message.reply("You are not authorized to use this channel.");
       await message.delete();
       return;

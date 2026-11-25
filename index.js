@@ -3,6 +3,7 @@ import "./src/lib/server.js";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { ActivityType, Client, GatewayIntentBits } from "discord.js";
+import { isAdmin } from "./src/discord/auth.js";
 import { loadDirectory, registerEvents } from "./src/discord/loader.js";
 import { registerSlash } from "./src/discord/registerSlash.js";
 import { createRouter } from "./src/discord/router.js";
@@ -44,6 +45,7 @@ const router = createRouter({
   personaResponder,
   alarms,
   slashCommands,
+  isAdmin,
 });
 
 client.on("messageCreate", router.onMessage);
