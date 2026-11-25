@@ -1,4 +1,4 @@
-import { SlashCommandBuilder } from "discord.js";
+import { MessageFlagsBitField, SlashCommandBuilder } from "discord.js";
 import { addCodeChannel } from "../../../utils/redeemCodeChannels.js";
 
 export default {
