@@ -7,9 +7,7 @@ COPY package.json bun.lock ./
 RUN bun install --frozen-lockfile --production
 
 # Copy source code (sesuai struktur)
-COPY command ./command
 COPY src ./src
-COPY helper ./helper
 COPY utils ./utils
 COPY index.js ./
 
@@ -21,9 +19,7 @@ WORKDIR /app
 COPY --from=builder /app/package.json .
 COPY --from=builder /app/bun.lock .
 COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/command ./command
 COPY --from=builder /app/src ./src
-COPY --from=builder /app/helper ./helper
 COPY --from=builder /app/utils ./utils
 COPY --from=builder /app/index.js .
 

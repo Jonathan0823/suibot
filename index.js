@@ -14,6 +14,8 @@ import { loadAlarmId, setupDailyAlarm, triggerAlarm } from "./utils/alarm.js";
 import { getSong, updateSongList } from "./utils/songlist.js";
 import { loadTriggerWords, triggerWords } from "./utils/triggerWord.js";
 import { bindAlertClient } from "./src/modules/ai/discordAlert.js";
+import personas from "./src/modules/personas/index.js";
+import { createDefaultPersonaResponder } from "./src/modules/personas/responder.js";
 import redeemCodes from "./src/modules/redeemCodes/index.js";
 import { fileURLToPath, pathToFileURL } from "node:url";
 const client = new Client({
@@ -52,10 +54,19 @@ client.on("clientReady", async () => {
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// Built on the first persona reply, not at boot; a failed build is retried on the next reply.
+let personaResponderReady = null;
+const personaResponder = {
+  reply: async (message, persona, args) => {
+    personaResponderReady ??= createDefaultPersonaResponder().catch((error) => {
+      personaResponderReady = null;
+      throw error;
+    });
+    return (await personaResponderReady).reply(message, persona, args);
+  },
+};
+
 const isRuntimeModule = (file) => file.endsWith(".js") && !file.endsWith(".test.js");
-const commandMap = new Map();
-const commandsPath = path.join(__dirname, "command");
-const commandFiles = fs.readdirSync(commandsPath).filter(isRuntimeModule);
 
 const slashCommands = [];
 const slashCommandMap = new Map();
@@ -64,13 +75,6 @@ const slashFiles = fs.readdirSync(slashPath).filter(isRuntimeModule);
 
 const eventsPath = path.join(__dirname, "src/discord/events");
 const eventFiles = fs.readdirSync(eventsPath).filter(isRuntimeModule);
-
-for (const file of commandFiles) {
-  const fullPath = path.join(commandsPath, file);
-  const module = await import(pathToFileURL(fullPath).href);
-  const command = module.default;
-  commandMap.set(command.data.name, command);
-}
 
 for (const file of slashFiles) {
   const fullPath = path.join(slashPath, file);
@@ -120,15 +124,15 @@ const handleMessageCommand = async (interaction) => {
   const args = interaction.content.slice(1).trim().split(/\s+/);
   const commandName = args.shift().toLowerCase();
 
-  const command = commandMap.get(commandName);
-  if (command) {
+  const persona = personas.find((entry) => entry.trigger === commandName);
+  if (persona) {
     try {
       if (interaction.replied || interaction.deferred) {
         console.log("Command already processed");
         return true;
       }
 
-      await command.execute(interaction, args);
+      await personaResponder.reply(interaction, persona, args);
       return true;
     } catch (error) {
       console.error(`Error in message command ${commandName}:`, error);

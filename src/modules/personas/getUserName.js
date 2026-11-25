@@ -1,8 +1,8 @@
 const USER_NAME_MAP = {
-  "lynz727wysi": "Eguin",
+  lynz727wysi: "Eguin",
   "nothing.25": "Nigga",
-  "vel740": "Revel",
-  "zerojuice": "Eric",
+  vel740: "Revel",
+  zerojuice: "Eric",
 };
 
 const getUserName = (message) => {
