@@ -24,7 +24,10 @@
     },
   },
   "trustedDependencies": [
+    "@prisma/engines",
     "starrail.js",
+    "prisma",
+    "@prisma/client",
     "enka-network-api",
   ],
   "packages": {

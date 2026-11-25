@@ -35,7 +35,10 @@
     "vitest": "^4.0.18"
   },
   "trustedDependencies": [
+    "@prisma/client",
+    "@prisma/engines",
     "enka-network-api",
+    "prisma",
     "starrail.js"
   ]
 }
