@@ -8,7 +8,6 @@ RUN bun install --frozen-lockfile --production
 
 # Copy source code (sesuai struktur)
 COPY src ./src
-COPY utils ./utils
 COPY index.js ./
 
 # Stage 2: Final image
@@ -20,7 +19,6 @@ COPY --from=builder /app/package.json .
 COPY --from=builder /app/bun.lock .
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/src ./src
-COPY --from=builder /app/utils ./utils
 COPY --from=builder /app/index.js .
 
 # Set non-root user

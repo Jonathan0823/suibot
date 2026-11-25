@@ -1,22 +1,16 @@
 import { SlashCommandBuilder, MessageFlagsBitField } from "discord.js";
-import { loadTriggerWords } from "../../../utils/triggerWord.js";
-import prisma from "../../lib/prisma.js";
+import triggerWords from "../../modules/triggerWords/index.js";
 
 export default {
   data: new SlashCommandBuilder()
     .setName("deletetriggerword")
     .setDescription("Delete a trigger word from the list")
     .addStringOption((option) =>
-      option
-        .setName("key")
-        .setDescription("The word to delete")
-        .setRequired(true),
+      option.setName("key").setDescription("The word to delete").setRequired(true),
     ),
 
   async execute(interaction) {
-    const sender = interaction.user.username;
-
-    if (sender !== "lynz727wysi") {
+    if (interaction.user.username !== "lynz727wysi") {
       await interaction.reply({
         content: "You are not authorized to use this command.",
         flags: MessageFlagsBitField.Flags.Ephemeral,
@@ -27,13 +21,9 @@ export default {
     const key = interaction.options.getString("key");
 
     try {
-      const triggerWord = await prisma.triggerWord.findUnique({
-        where: {
-          key,
-        },
-      });
+      const deleted = await triggerWords.remove(key);
 
-      if (!triggerWord) {
+      if (!deleted) {
         await interaction.reply({
           content: `The trigger word "${key}" does not exist.`,
           flags: MessageFlagsBitField.Flags.Ephemeral,
@@ -41,14 +31,6 @@ export default {
 
         return;
       }
-
-      await prisma.triggerWord.delete({
-        where: {
-          key,
-        },
-      });
-
-      await loadTriggerWords();
 
       await interaction.reply({
         content: `The trigger word "${key}" has been deleted.`,

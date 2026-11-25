@@ -10,9 +10,9 @@ import {
   ActivityType,
   MessageFlagsBitField,
 } from "discord.js";
-import { loadAlarmId, setupDailyAlarm, triggerAlarm } from "./utils/alarm.js";
-import { getSong, updateSongList } from "./utils/songlist.js";
-import { loadTriggerWords, triggerWords } from "./utils/triggerWord.js";
+import alarms from "./src/modules/alarms/index.js";
+import songStatus from "./src/modules/songStatus/index.js";
+import triggerWords from "./src/modules/triggerWords/index.js";
 import { bindAlertClient } from "./src/modules/ai/discordAlert.js";
 import personas from "./src/modules/personas/index.js";
 import { createDefaultPersonaResponder } from "./src/modules/personas/responder.js";
@@ -28,10 +28,9 @@ const client = new Client({
 
 client.on("clientReady", async () => {
   bindAlertClient(client);
-  await loadAlarmId();
-  await loadTriggerWords();
+  await alarms.start(client);
+  await triggerWords.start();
 
-  setupDailyAlarm(client, "hoyo");
   await redeemCodes.start(client);
 
   client.user.setActivity("新星目録", {
@@ -40,15 +39,7 @@ client.on("clientReady", async () => {
 
   console.log(`Logged in as ${client.user.tag}!`);
 
-  await updateSongList();
-
-  setInterval(() => {
-    const songs = getSong();
-    const randomSong = songs[Math.floor(Math.random() * songs.length)];
-    client.user.setActivity(randomSong, {
-      type: ActivityType.Listening,
-    });
-  }, 1000 * 60);
+  await songStatus.start(client);
 });
 
 const __filename = fileURLToPath(import.meta.url);
@@ -112,7 +103,7 @@ try {
 }
 
 const handleMessageCommand = async (interaction) => {
-  const handled = await triggerWords(interaction);
+  const handled = await triggerWords.match(interaction);
   if (handled) {
     return true;
   }
@@ -189,12 +180,12 @@ const executeCommand = async (interaction, isSlash = true) => {
 client.on("messageCreate", async (message) => {
   if (message.content === "!alarm") {
     const channelId = [message.channel.id];
-    await triggerAlarm(message.client, channelId, "hoyo");
+    await alarms.fire("hoyo", channelId, message.client);
     message.reply("Alarm triggered for testing!");
   }
   if (message.content === "!alarmwuwa") {
     const channelId = [message.channel.id];
-    await triggerAlarm(message.client, channelId, "wuwa");
+    await alarms.fire("wuwa", channelId, message.client);
     message.reply("Alarm triggered for testing!");
   }
   await executeCommand(message, false);

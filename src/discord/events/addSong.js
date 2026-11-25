@@ -1,5 +1,4 @@
-import prisma from "../../lib/prisma.js";
-import { updateSongList } from "../../../utils/songlist.js";
+import songStatus from "../../modules/songStatus/index.js";
 
 const channelId = "1347471345356767294";
 export default {
@@ -13,13 +12,7 @@ export default {
     if (!song) return;
 
     try {
-      await prisma.songList.create({
-        data: {
-          songName: song,
-        },
-      });
-
-      await updateSongList();
+      await songStatus.add(song);
 
       await message.react("✅");
     } catch (err) {

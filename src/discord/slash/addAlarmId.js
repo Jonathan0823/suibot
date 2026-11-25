@@ -1,22 +1,16 @@
 import { SlashCommandBuilder, MessageFlagsBitField } from "discord.js";
-import prisma from "../../lib/prisma.js";
-import { loadAlarmId, setupDailyAlarm } from "../../../utils/alarm.js";
+import alarms from "../../modules/alarms/index.js";
 
 export default {
   data: new SlashCommandBuilder()
     .setName("setupdailyalarm")
     .setDescription("Set up daily alarm for a channel")
     .addStringOption((option) =>
-      option
-        .setName("channelid")
-        .setDescription("The channel ID")
-        .setRequired(true),
+      option.setName("channelid").setDescription("The channel ID").setRequired(true),
     ),
 
   async execute(interaction) {
-    const sender = interaction.user.username;
-
-    if (sender !== "lynz727wysi") {
+    if (interaction.user.username !== "lynz727wysi") {
       await interaction.reply({
         content: "You are not authorized to use this command.",
         flags: MessageFlagsBitField.Flags.Ephemeral,
@@ -25,27 +19,9 @@ export default {
     }
 
     const channelId = interaction.options.getString("channelid");
-    const alarmId =
-      (await prisma.alarmChannel.findUnique({
-        where: {
-          channelId,
-        },
-      })) || null;
-    const alarmIdExists = alarmId !== null;
-
-    if (alarmIdExists) {
-      return interaction.reply({
-        content: `The channel ID "${channelId}" is already in the list!`,
-        flags: MessageFlagsBitField.Flags.Ephemeral,
-      });
-    }
-
+    let result;
     try {
-      await prisma.alarmChannel.create({
-        data: {
-          channelId,
-        },
-      });
+      result = await alarms.addChannel(channelId, interaction.client);
     } catch (error) {
       console.error("Error adding channel ID:", error);
       return interaction.reply({
@@ -54,8 +30,13 @@ export default {
       });
     }
 
-    await loadAlarmId();
-    setupDailyAlarm(interaction.client, "hoyo");
+    if (!result.ok) {
+      return interaction.reply({
+        content: `The channel ID "${channelId}" is already in the list!`,
+        flags: MessageFlagsBitField.Flags.Ephemeral,
+      });
+    }
+
     await interaction.reply({
       content: `The channel ID "${channelId}" has been added to the list!`,
       flags: MessageFlagsBitField.Flags.Ephemeral,

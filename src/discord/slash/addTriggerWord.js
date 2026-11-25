@@ -1,6 +1,5 @@
 import { SlashCommandBuilder, MessageFlagsBitField } from "discord.js";
-import prisma from "../../lib/prisma.js";
-import { loadTriggerWords } from "../../../utils/triggerWord.js";
+import triggerWords from "../../modules/triggerWords/index.js";
 
 export default {
   data: new SlashCommandBuilder()
@@ -13,7 +12,8 @@ export default {
       option.setName("response").setDescription("The response to send").setRequired(true),
     )
     .addStringOption((option) =>
-      option.setName("matchmode")
+      option
+        .setName("matchmode")
         .setDescription("How to match: exact, prefix, contains, regex")
         .setRequired(false)
         .addChoices(
@@ -24,21 +24,23 @@ export default {
         ),
     )
     .addStringOption((option) =>
-      option.setName("aliases")
+      option
+        .setName("aliases")
         .setDescription("Comma-separated alternative keys")
         .setRequired(false),
     )
     .addIntegerOption((option) =>
-      option.setName("priority").setDescription("Higher priority triggers checked first").setRequired(false),
+      option
+        .setName("priority")
+        .setDescription("Higher priority triggers checked first")
+        .setRequired(false),
     )
     .addIntegerOption((option) =>
       option.setName("cooldown").setDescription("Cooldown in seconds").setRequired(false),
     ),
 
   async execute(interaction) {
-    const sender = interaction.user.username;
-
-    if (sender !== "lynz727wysi") {
+    if (interaction.user.username !== "lynz727wysi") {
       await interaction.reply({
         content: "You are not authorized to use this command.",
         flags: MessageFlagsBitField.Flags.Ephemeral,
@@ -55,32 +57,27 @@ export default {
 
     // Parse aliases from comma-separated string
     const aliases = aliasesRaw
-      ? aliasesRaw.split(",").map((a) => a.trim()).filter(Boolean)
+      ? aliasesRaw
+          .split(",")
+          .map((a) => a.trim())
+          .filter(Boolean)
       : [];
 
-    const existing = await prisma.triggerWord.findUnique({
-      where: { key: key.toLowerCase().trim() },
+    const result = await triggerWords.add({
+      key,
+      response,
+      matchMode,
+      aliases,
+      priority,
+      cooldownSeconds: cooldown,
     });
 
-    if (existing) {
+    if (!result.ok) {
       return interaction.reply({
         content: `The trigger "${key}" already exists!`,
         flags: MessageFlagsBitField.Flags.Ephemeral,
       });
     }
-
-    await prisma.triggerWord.create({
-      data: {
-        key: key.toLowerCase().trim(),
-        response,
-        matchMode,
-        aliases,
-        priority,
-        cooldownSeconds: cooldown,
-      },
-    });
-
-    await loadTriggerWords();
 
     await interaction.reply({
       content: `Trigger "${key}" has been added! (mode: ${matchMode})`,

@@ -1,22 +1,16 @@
 import { SlashCommandBuilder, MessageFlagsBitField } from "discord.js";
-import prisma from "../../lib/prisma.js";
-import { updateSongList } from "../../../utils/songlist.js";
+import songStatus from "../../modules/songStatus/index.js";
 
 export default {
   data: new SlashCommandBuilder()
     .setName("removesong")
     .setDescription("Removes a song from the song list")
     .addStringOption((option) =>
-      option
-        .setName("song")
-        .setDescription("The song to remove")
-        .setRequired(true),
+      option.setName("song").setDescription("The song to remove").setRequired(true),
     ),
 
   async execute(interaction) {
-    const sender = interaction.user.username;
-
-    if (sender !== "lynz727wysi") {
+    if (interaction.user.username !== "lynz727wysi") {
       await interaction.reply({
         content: "You are not authorized to use this command.",
         flags: MessageFlagsBitField.Flags.Ephemeral,
@@ -27,11 +21,7 @@ export default {
     const song = interaction.options.getString("song");
 
     try {
-      await prisma.songList.delete({
-        where: {
-          songName: song,
-        },
-      });
+      await songStatus.remove(song);
     } catch (err) {
       console.error(err);
       await interaction.reply({
@@ -39,8 +29,6 @@ export default {
         flags: MessageFlagsBitField.Flags.Ephemeral,
       });
     }
-
-    await updateSongList();
 
     await interaction.reply({
       content: `Song ${song} has been removed from the song list.`,
