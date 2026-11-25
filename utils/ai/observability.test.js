@@ -49,3 +49,28 @@ describe("AI observability", () => {
     });
   });
 });
+
+describe("AI observability: Tool errors", () => {
+  it("logs a Tool's error message with keys and tokens redacted", () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    try {
+      logAiEvent("ai_tool_use", {
+        tool: "web_search",
+        ok: false,
+        errorMessage: "Request failed: api_key=AIzaSECRET token: abc123 sk-or-v1-deadbeef",
+        errorType: "Error",
+      });
+      const line = JSON.parse(info.mock.calls[0][0]);
+      expect(line).toMatchObject({
+        event: "ai_tool_use",
+        tool: "web_search",
+        ok: false,
+        errorType: "Error",
+      });
+      expect(line.errorMessage).toContain("Request failed");
+      expect(line.errorMessage).not.toMatch(/AIzaSECRET|abc123|deadbeef/);
+    } finally {
+      info.mockRestore();
+    }
+  });
+});

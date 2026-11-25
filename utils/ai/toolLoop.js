@@ -1,6 +1,20 @@
 export const MAX_TOOL_ROUNDS = 4;
 
 /**
+ * What a Tool failure was, for the log: its message, name and HTTP status. logAiEvent
+ * redacts keys and tokens from errorMessage and caps its length.
+ */
+function errorDetails(error) {
+  const category = {
+    errorMessage: error?.message || String(error),
+    errorType: error?.invalid ? "InvalidArguments" : (error?.name ?? "Error"),
+  };
+  const status = error?.statusCode ?? error?.status;
+  if (Number.isInteger(status) && status > 0) category.statusCode = status;
+  return category;
+}
+
+/**
  * Wraps provider generate() with a capped Tool-use loop. Tool calls and results live only
  * inside one reply: they are never returned or stored (ADR-0003).
  * @param {object} deps
@@ -19,6 +33,7 @@ export function createToolLoop({ generate, tools, logEvent = () => {} }) {
     const startedAt = Date.now();
     let output;
     let ok = true;
+    let failure;
     try {
       const tool = tools.find((candidate) => candidate.name === call.name);
       if (call.invalidArgs) throw Object.assign(new Error("invalid arguments"), { invalid: true });
@@ -26,6 +41,7 @@ export function createToolLoop({ generate, tools, logEvent = () => {} }) {
       output = await tool.run(call.args ?? {});
     } catch (error) {
       ok = false;
+      failure = errorDetails(error);
       output = error?.invalid
         ? `Tool error: ${call.name} received invalid arguments. Tell the member you couldn't check right now; do not guess.`
         : `Tool error: ${call.name} failed${error?.userMessage ? ` (${error.userMessage})` : ""}. Tell the member you couldn't check right now; do not guess.`;
@@ -35,6 +51,7 @@ export function createToolLoop({ generate, tools, logEvent = () => {} }) {
       tool: call.name,
       durationMs: Date.now() - startedAt,
       ok,
+      ...failure,
     });
     return { id: call.id, name: call.name, output };
   }
