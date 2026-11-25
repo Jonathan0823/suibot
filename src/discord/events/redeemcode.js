@@ -1,7 +1,6 @@
 import "dotenv/config";
 import { removeWhitespace } from "../../utils/titleCase.js";
-import { getCodeChannels } from "../../../utils/redeemCodeChannels.js";
-import { createRedeemEmbed, CHANNEL_CONFIG } from "../../../helper/redeemEmbed.js";
+import redeemCodes from "../../modules/redeemCodes/index.js";
 
 const AUTHORIZED_USER = "lynz727wysi";
 
@@ -23,8 +22,8 @@ export default {
   name: "messageCreate",
   async execute(message) {
     // Check if message is in one of the monitored channels
-    const channelConfig = CHANNEL_CONFIG[message.channelId];
-    if (!channelConfig) return;
+    const gameType = redeemCodes.gameForInputChannel(message.channelId);
+    if (!gameType) return;
 
     // Check if sender is authorized
     if (message.author.username !== AUTHORIZED_USER) {
@@ -35,34 +34,10 @@ export default {
 
     try {
       const codes = parseMessage(message.content);
-      const gameType = channelConfig.game;
-
-      // Create embed using shared helper
-      const embed = createRedeemEmbed(gameType, codes);
-
-      // Send to all output channels
-      await Promise.all(
-        getCodeChannels(gameType).map(async (channelId) => {
-          try {
-            const targetChannel =
-              await message.client.channels.fetch(channelId);
-            if (targetChannel?.isTextBased()) {
-              await targetChannel.send({ embeds: [embed] });
-
-              for (const { code } of codes) {
-                await targetChannel.send(code);
-              }
-            }
-          } catch (error) {
-            console.error(`Failed to send to channel ${channelId}:`, error);
-          }
-        }),
-      );
+      await redeemCodes.broadcast(gameType, codes, { client: message.client });
     } catch (error) {
       console.error("Error processing message:", error);
-      await message.reply(
-        "Error: Invalid format. Please use: code1 item1,code2 item2",
-      );
+      await message.reply("Error: Invalid format. Please use: code1 item1,code2 item2");
       setTimeout(() => message.delete(), 5000);
     }
   },

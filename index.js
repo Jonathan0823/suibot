@@ -13,9 +13,8 @@ import {
 import { loadAlarmId, setupDailyAlarm, triggerAlarm } from "./utils/alarm.js";
 import { getSong, updateSongList } from "./utils/songlist.js";
 import { loadTriggerWords, triggerWords } from "./utils/triggerWord.js";
-import { loadCodeChannels } from "./utils/redeemCodeChannels.js";
 import { bindAlertClient } from "./src/modules/ai/discordAlert.js";
-import { setupCodeScraperCron } from "./utils/autoCodeBroadcast.js";
+import redeemCodes from "./src/modules/redeemCodes/index.js";
 import { fileURLToPath, pathToFileURL } from "node:url";
 const client = new Client({
   intents: [
@@ -29,10 +28,9 @@ client.on("clientReady", async () => {
   bindAlertClient(client);
   await loadAlarmId();
   await loadTriggerWords();
-  await loadCodeChannels();
 
   setupDailyAlarm(client, "hoyo");
-  setupCodeScraperCron(client);
+  await redeemCodes.start(client);
 
   client.user.setActivity("新星目録", {
     type: ActivityType.Listening,

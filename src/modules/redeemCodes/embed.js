@@ -1,83 +1,6 @@
 import { EmbedBuilder } from "discord.js";
-import getRandomColor from "../src/utils/randomColor.js";
-
-// Game configuration
-export const GAME_CONFIG = {
-  gi: {
-    name: "Genshin Impact",
-    emoji: "<:genshinimpact:1324355501466849331>",
-    currencyEmoji: "<:primo:1334721457883971614>",
-    playerName: "Traveler",
-    redeemLink: "https://genshin.hoyoverse.com/en/gift?code=",
-  },
-  hsr: {
-    name: "Honkai Star Rail",
-    emoji: "<:hsr:1324355673567395921>",
-    currencyEmoji: "<:jade:1334721376635846686>",
-    playerName: "Trailblazer",
-    redeemLink: "https://hsr.hoyoverse.com/gift?code=",
-  },
-  zzz: {
-    name: "Zenless Zone Zero",
-    emoji: "<:zenless:1324356078825377932>",
-    currencyEmoji: "<:poly:1334721545477820557>",
-    playerName: "Proxy",
-    redeemLink: "https://zenless.hoyoverse.com/redemption?code=",
-  },
-  wuwa: {
-    name: "Wuthering Waves",
-    emoji: "<:chixiayatta:1336876161803882586>",
-    currencyEmoji: "<:astrite:1364023503195734036>",
-    playerName: "Rover",
-    redeemLink: null, // No web redemption for Wuwa
-  },
-  endfield: {
-    name: "Arknights: Endfield",
-    emoji: "<:endmin:1467358770135957627>",
-    currencyEmoji: "<:Oroberyl:1467344972851187960>",
-    playerName: "Endministrator",
-    redeemLink: null,
-  },
-};
-
-// Channel configuration for manual code input
-export const CHANNEL_CONFIG = {
-  "1337568739415167057": { game: "gi" },
-  "1337568755462701177": { game: "hsr" },
-  "1337568767395364938": { game: "zzz" },
-  "1364022887022985279": { game: "wuwa" },
-};
-
-/**
- * Get game emoji
- * @param {string} game - Game type: gi, hsr, zzz, wuwa
- */
-export const getEmoji = (game) => GAME_CONFIG[game]?.emoji || "";
-
-/**
- * Get currency emoji
- * @param {string} game - Game type
- */
-export const getCurrencyEmoji = (game) =>
-  GAME_CONFIG[game]?.currencyEmoji || "";
-
-/**
- * Get game name
- * @param {string} game - Game type
- */
-export const getGameName = (game) => GAME_CONFIG[game]?.name || "";
-
-/**
- * Get player name for game
- * @param {string} game - Game type
- */
-export const getPlayerName = (game) => GAME_CONFIG[game]?.playerName || "";
-
-/**
- * Get redeem link for game
- * @param {string} game - Game type
- */
-export const getRedeemLink = (game) => GAME_CONFIG[game]?.redeemLink || null;
+import getRandomColor from "../../utils/randomColor.js";
+import { GAME_CONFIG } from "./gameConfig.js";
 
 /**
  * Replace currency names with emojis in rewards text
@@ -143,9 +66,7 @@ ${codes
   .map((c) => {
     const rawReward = c.value || c.rewards || "";
     const reward = replaceCurrencyWithEmoji(rawReward, game);
-    const linkPart = config.redeemLink
-      ? `→ [Link](${config.redeemLink}${c.code})`
-      : "";
+    const linkPart = config.redeemLink ? `→ [Link](${config.redeemLink}${c.code})` : "";
     return `\`${c.code}\` ${config.currencyEmoji} ${linkPart}\n  ↳ ${reward}`;
   })
   .join("\n\n")}`,

@@ -6,7 +6,7 @@ import { sendOperationsAlert } from "../src/modules/ai/discordAlert.js";
 import { createAiProviderService } from "../src/modules/ai/providers.js";
 import { createToolLoop } from "../src/modules/ai/toolLoop.js";
 import { createTools } from "../src/modules/ai/tools.js";
-import { ensureScrapedCodeCache, getCachedCodesForGame } from "./codeScraper.js";
+import redeemCodes from "../src/modules/redeemCodes/index.js";
 import { getEnkaService } from "../src/modules/enka/enkaClient.js";
 import { createConversation } from "../src/modules/conversation/conversation.js";
 import { createPostgresStore } from "../src/modules/conversation/postgresStore.js";
@@ -21,10 +21,7 @@ const generateWithTools = createToolLoop({
   logEvent: logAiEvent,
   tools: createTools({
     search: (query) => providerService.search(query),
-    getCodes: async (game) => {
-      await ensureScrapedCodeCache();
-      return getCachedCodesForGame(game);
-    },
+    getCodes: (game) => redeemCodes.getActiveCodes(game),
     getPlayer: (game, uid) => getEnkaService().getPlayer(game, uid),
   }),
 });

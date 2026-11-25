@@ -1,5 +1,5 @@
 import { MessageFlagsBitField, SlashCommandBuilder } from "discord.js";
-import { addCodeChannel } from "../../../utils/redeemCodeChannels.js";
+import redeemCodes from "../../modules/redeemCodes/index.js";
 
 export default {
   data: new SlashCommandBuilder()
@@ -33,7 +33,7 @@ export default {
     const game = interaction.options.getString("game");
 
     try {
-      await addCodeChannel(game, channelId);
+      await redeemCodes.addChannel(game, channelId);
     } catch (error) {
       console.error("Error adding channel ID:", error);
       return interaction.reply({
