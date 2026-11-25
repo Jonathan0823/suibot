@@ -1,8 +1,14 @@
+import { fork } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { EnkaClient } from "enka-network-api";
 import { StarRail } from "starrail.js";
 
 const LANGUAGE = "en";
 const CACHE_UPDATE_INTERVAL_MS = 60 * 60 * 1000;
+const UPDATE_TIMEOUT_MS = 15 * 60 * 1000;
+const UPDATE_SCRIPT = fileURLToPath(new URL("./updateGameData.js", import.meta.url));
+const GAME_LABELS = { genshin: "Genshin", starrail: "Star Rail" };
+const UID_PATTERN = /^\d+$/;
 
 const text = (textAssets) => {
   try {
@@ -81,30 +87,64 @@ export function getEnkaService() {
 }
 
 /**
+ * Updates one game's data in a child process (updateGameData.js) and reports whether new data
+ * landed. Rejects when the child fails, crashes or runs past timeoutMs.
+ * @returns {Promise<{updated: boolean}>}
+ */
+export function runUpdateInChild(
+  game,
+  { timeoutMs = UPDATE_TIMEOUT_MS, script = UPDATE_SCRIPT } = {},
+) {
+  return new Promise((resolve, reject) => {
+    const child = fork(script, [game], {
+      // Don't pass the bot's own Node flags (--inspect, --watch, ...) to the updater.
+      execArgv: [],
+      stdio: ["ignore", "inherit", "inherit", "ipc"],
+    });
+    let updated = false;
+    const timer = setTimeout(() => {
+      child.kill();
+      reject(new Error(`game data update timed out after ${timeoutMs} ms`));
+    }, timeoutMs);
+    child.on("message", (message) => {
+      if (message?.updated) updated = true;
+    });
+    child.on("error", (error) => {
+      clearTimeout(timer);
+      reject(error);
+    });
+    child.on("exit", (code, signal) => {
+      clearTimeout(timer);
+      if (code === 0) resolve({ updated });
+      else reject(new Error(`game data update exited with ${signal ?? `code ${code}`}`));
+    });
+  });
+}
+
+/**
  * Checks for new game data now and then every interval, so new characters appear without a
- * package release. The libraries' own activateAutoCacheUpdater() does not await its updates,
- * so a failed download (GitHub down, rate limit) becomes an unhandled rejection; this loop
- * catches it and keeps the old data.
+ * package release. Each check runs in a child process: the libraries' own updater leaves
+ * failures unhandled (an unzip error can crash the process) and, after a failed download,
+ * refuses every later update until restart. When new data lands, this process reloads it.
+ * @param {"genshin" | "starrail"} game
  * @returns {() => void} stops the updater
  */
 export function startCacheUpdater(
-  label,
+  game,
   client,
-  { log = console, intervalMs = CACHE_UPDATE_INTERVAL_MS } = {},
+  { log = console, intervalMs = CACHE_UPDATE_INTERVAL_MS, runUpdate = runUpdateInChild } = {},
 ) {
-  const assets = client.cachedAssetsManager;
+  const label = GAME_LABELS[game];
   let updating = false;
   async function update() {
     if (updating) return;
     updating = true;
     try {
-      await assets.updateContents({
-        onUpdateStart: async () => log.info(`[Enka] Updating ${label} game data...`),
-        onUpdateEnd: async () => {
-          assets.refreshAllData();
-          log.info(`[Enka] ${label} game data updated`);
-        },
-      });
+      const { updated } = await runUpdate(game);
+      if (updated) {
+        client.cachedAssetsManager.refreshAllData();
+        log.info(`[Enka] ${label} game data updated`);
+      }
     } catch (error) {
       log.error(`[Enka] ${label} game data update failed:`, error);
     } finally {
@@ -125,13 +165,20 @@ export function createEnkaService({
   log = console,
 } = {}) {
   if (autoUpdate) {
-    startCacheUpdater("Genshin", genshin, { log });
-    startCacheUpdater("Star Rail", starrail, { log });
+    startCacheUpdater("genshin", genshin, { log });
+    startCacheUpdater("starrail", starrail, { log });
   }
 
   return {
     /** @param {"genshin" | "starrail"} game */
     async getPlayer(game, uid) {
+      // The libraries reject a non-numeric UID with a plain Error; name it like Enka's own.
+      if (!UID_PATTERN.test(String(uid ?? "").trim())) {
+        throw Object.assign(new Error(`Invalid UID format. (${uid} provided.)`), {
+          name: "InvalidUidFormatError",
+        });
+      }
+      uid = String(uid).trim();
       if (game === "starrail") return toStarRailProfile(await starrail.fetchUser(uid));
       if (game === "genshin") {
         const user = await genshin.fetchUser(uid);

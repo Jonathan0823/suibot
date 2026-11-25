@@ -1,6 +1,10 @@
-import { describe, expect, it, vi } from "vitest";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterAll, describe, expect, it, vi } from "vitest";
 import {
   createEnkaService,
+  runUpdateInChild,
   startCacheUpdater,
   toGenshinProfile,
   toStarRailProfile,
@@ -138,64 +142,130 @@ describe("createEnkaService", () => {
   });
 });
 
+describe("createEnkaService UID check", () => {
+  const deps = () => ({
+    genshin: { fetchUser: vi.fn(), getCharacterById: vi.fn() },
+    starrail: { fetchUser: vi.fn().mockResolvedValue({ uid: 808791484 }) },
+    autoUpdate: false,
+  });
+
+  it.each(["abc", "", "12a", undefined])(
+    "rejects %j as InvalidUidFormatError without fetching",
+    async (uid) => {
+      const d = deps();
+      await expect(createEnkaService(d).getPlayer("starrail", uid)).rejects.toMatchObject({
+        name: "InvalidUidFormatError",
+      });
+      expect(d.starrail.fetchUser).not.toHaveBeenCalled();
+    },
+  );
+
+  it("trims a numeric UID before fetching", async () => {
+    const d = deps();
+    await createEnkaService(d).getPlayer("starrail", " 808791484 ");
+    expect(d.starrail.fetchUser).toHaveBeenCalledWith("808791484");
+  });
+});
+
 describe("startCacheUpdater", () => {
   const log = () => ({ info: vi.fn(), error: vi.fn() });
   const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+  const client = () => ({ cachedAssetsManager: { refreshAllData: vi.fn() } });
 
-  it("updates now, refreshes game data when an update lands, and logs it", async () => {
-    const assets = {
-      updateContents: vi.fn(async ({ onUpdateStart, onUpdateEnd }) => {
-        await onUpdateStart();
-        await onUpdateEnd();
-      }),
-      refreshAllData: vi.fn(),
-    };
+  it("updates now and reloads game data when the update brought new data", async () => {
+    const c = client();
     const logger = log();
-    const stop = startCacheUpdater("Star Rail", { cachedAssetsManager: assets }, { log: logger });
+    const runUpdate = vi.fn().mockResolvedValue({ updated: true });
+    const stop = startCacheUpdater("starrail", c, { log: logger, runUpdate });
     await flush();
     stop();
-    expect(assets.updateContents).toHaveBeenCalledTimes(1);
-    expect(assets.refreshAllData).toHaveBeenCalledTimes(1);
+    expect(runUpdate).toHaveBeenCalledWith("starrail");
+    expect(c.cachedAssetsManager.refreshAllData).toHaveBeenCalledTimes(1);
     expect(logger.info).toHaveBeenCalledWith("[Enka] Star Rail game data updated");
   });
 
-  it("logs a failed update instead of leaving an unhandled rejection", async () => {
-    const assets = {
-      updateContents: vi.fn().mockRejectedValue(new Error("rate limited")),
-      refreshAllData: vi.fn(),
-    };
-    const logger = log();
-    const stop = startCacheUpdater("Genshin", { cachedAssetsManager: assets }, { log: logger });
+  it("does not reload when nothing changed", async () => {
+    const c = client();
+    const stop = startCacheUpdater("genshin", c, {
+      log: log(),
+      runUpdate: vi.fn().mockResolvedValue({ updated: false }),
+    });
     await flush();
     stop();
-    expect(logger.error).toHaveBeenCalledWith(
-      "[Enka] Genshin game data update failed:",
-      expect.any(Error),
-    );
-    expect(assets.refreshAllData).not.toHaveBeenCalled();
+    expect(c.cachedAssetsManager.refreshAllData).not.toHaveBeenCalled();
   });
 
-  it("checks again every interval but never runs two updates at once", async () => {
+  it("logs a failed update instead of crashing, and tries again next interval", async () => {
     vi.useFakeTimers();
     try {
-      let finish;
-      const assets = {
-        updateContents: vi.fn(() => new Promise((resolve) => (finish = resolve))),
-        refreshAllData: vi.fn(),
-      };
-      const stop = startCacheUpdater(
-        "Genshin",
-        { cachedAssetsManager: assets },
-        { log: log(), intervalMs: 1000 },
+      const c = client();
+      const logger = log();
+      const runUpdate = vi
+        .fn()
+        .mockRejectedValueOnce(new Error("exited with code 1"))
+        .mockResolvedValue({ updated: true });
+      const stop = startCacheUpdater("genshin", c, { log: logger, runUpdate, intervalMs: 1000 });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(logger.error).toHaveBeenCalledWith(
+        "[Enka] Genshin game data update failed:",
+        expect.any(Error),
       );
       await vi.advanceTimersByTimeAsync(1000);
-      expect(assets.updateContents).toHaveBeenCalledTimes(1);
-      finish();
-      await vi.advanceTimersByTimeAsync(1000);
-      expect(assets.updateContents).toHaveBeenCalledTimes(2);
+      expect(runUpdate).toHaveBeenCalledTimes(2);
+      expect(c.cachedAssetsManager.refreshAllData).toHaveBeenCalledTimes(1);
       stop();
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("never runs two updates at once", async () => {
+    vi.useFakeTimers();
+    try {
+      let finish;
+      const runUpdate = vi.fn(() => new Promise((resolve) => (finish = resolve)));
+      const stop = startCacheUpdater("genshin", client(), {
+        log: log(),
+        runUpdate,
+        intervalMs: 1000,
+      });
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(runUpdate).toHaveBeenCalledTimes(1);
+      finish({ updated: false });
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(runUpdate).toHaveBeenCalledTimes(2);
+      stop();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe("runUpdateInChild", () => {
+  const scriptDir = mkdtempSync(join(tmpdir(), "enka-updater-"));
+  afterAll(() => rmSync(scriptDir, { recursive: true, force: true }));
+  const script = (name, body) => {
+    const path = join(scriptDir, name);
+    writeFileSync(path, body);
+    return path;
+  };
+
+  it("reports that new data landed", async () => {
+    const path = script("ok.mjs", "process.send({ updated: true }); process.exit(0);");
+    await expect(runUpdateInChild("genshin", { script: path })).resolves.toEqual({ updated: true });
+  });
+
+  it("rejects, without crashing this process, when the child throws from a callback", async () => {
+    const path = script("crash.mjs", 'setTimeout(() => { throw new Error("ENOSPC"); }, 0);');
+    await expect(runUpdateInChild("genshin", { script: path })).rejects.toThrow(
+      /exited with code 1/,
+    );
+  });
+
+  it("kills a child that runs past the timeout", async () => {
+    const path = script("hang.mjs", "setInterval(() => {}, 1000);");
+    await expect(runUpdateInChild("genshin", { script: path, timeoutMs: 200 })).rejects.toThrow(
+      /timed out/,
+    );
   });
 });
