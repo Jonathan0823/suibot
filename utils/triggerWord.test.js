@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // Mock prisma before importing the module
-vi.mock("../lib/prisma.js", () => ({
+vi.mock("../src/lib/prisma.js", () => ({
   default: {
     triggerWord: {
       findMany: vi.fn(),
@@ -19,8 +19,8 @@ const createMockInteraction = (content, authorId = "user123", isBot = false) => 
 });
 
 // Import the module after mocking
-import { triggerWords, loadTriggerWords, reloadTriggerWords } from "../utils/triggerWord.js";
-import prisma from "../lib/prisma.js";
+import { triggerWords, loadTriggerWords, reloadTriggerWords } from "./triggerWord.js";
+import prisma from "../src/lib/prisma.js";
 
 describe("Trigger Word System", () => {
   beforeEach(() => {

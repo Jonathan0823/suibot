@@ -1,7 +1,7 @@
 import "dotenv/config";
-import { removeWhitespace } from "../helper/titleCase.js";
-import { getCodeChannels } from "../utils/redeemCodeChannels.js";
-import { createRedeemEmbed, CHANNEL_CONFIG } from "../helper/redeemEmbed.js";
+import { removeWhitespace } from "../../utils/titleCase.js";
+import { getCodeChannels } from "../../../utils/redeemCodeChannels.js";
+import { createRedeemEmbed, CHANNEL_CONFIG } from "../../../helper/redeemEmbed.js";
 
 const AUTHORIZED_USER = "lynz727wysi";
 

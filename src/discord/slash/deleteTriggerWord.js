@@ -1,6 +1,6 @@
 import { SlashCommandBuilder, MessageFlagsBitField } from "discord.js";
-import { loadTriggerWords } from "../utils/triggerWord.js";
-import prisma from "../lib/prisma.js";
+import { loadTriggerWords } from "../../../utils/triggerWord.js";
+import prisma from "../../lib/prisma.js";
 
 export default {
   data: new SlashCommandBuilder()

@@ -1,15 +1,15 @@
 import { ChannelType, MessageFlagsBitField, SlashCommandBuilder } from "discord.js";
-import prisma from "../lib/prisma.js";
+import prisma from "../../lib/prisma.js";
 import {
   clearProviderCredentialCache,
   getProviderApiKey,
   loadAiConfig,
   PROVIDER_TYPES,
-} from "../utils/ai/config.js";
-import { encryptApiKey } from "../utils/ai/crypto.js";
-import { filterModelIds, modelCatalog } from "../utils/ai/modelCatalog.js";
-import { createRequestId, logAiEvent } from "../utils/ai/observability.js";
-import { AiProviderError, createAiProviderService } from "../utils/ai/providers.js";
+} from "../../modules/ai/config.js";
+import { encryptApiKey } from "../../modules/ai/crypto.js";
+import { filterModelIds, modelCatalog } from "../../modules/ai/modelCatalog.js";
+import { createRequestId, logAiEvent } from "../../modules/ai/observability.js";
+import { AiProviderError, createAiProviderService } from "../../modules/ai/providers.js";
 
 const EPHEMERAL = MessageFlagsBitField.Flags.Ephemeral;
 

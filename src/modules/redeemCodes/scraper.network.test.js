@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { fetchEndfieldCodes } from '../utils/codeScraper.js';
+import { fetchEndfieldCodes } from '../../../utils/codeScraper.js';
 
 describe('Arknights: Endfield Scraper', () => {
     it('should fetch codes from game8.co', async () => {

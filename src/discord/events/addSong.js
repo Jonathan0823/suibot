@@ -1,5 +1,5 @@
-import prisma from "../lib/prisma.js";
-import { updateSongList } from "../utils/songlist.js";
+import prisma from "../../lib/prisma.js";
+import { updateSongList } from "../../../utils/songlist.js";
 
 const channelId = "1347471345356767294";
 export default {

@@ -1,9 +1,7 @@
 import { SlashCommandBuilder } from "discord.js";
 
 export default {
-  data: new SlashCommandBuilder()
-    .setName("help")
-    .setDescription("Replies with help!"),
+  data: new SlashCommandBuilder().setName("help").setDescription("Replies with help!"),
 
   async execute(interaction) {
     await interaction.reply(
@@ -11,4 +9,3 @@ export default {
     );
   },
 };
-

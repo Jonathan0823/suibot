@@ -1,6 +1,6 @@
 import { SlashCommandBuilder, MessageFlagsBitField } from "discord.js";
-import prisma from "../lib/prisma.js";
-import { updateSongList } from "../utils/songlist.js";
+import prisma from "../../lib/prisma.js";
+import { updateSongList } from "../../../utils/songlist.js";
 
 export default {
   data: new SlashCommandBuilder()

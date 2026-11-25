@@ -1,4 +1,4 @@
-import { titleCase } from "../../helper/titleCase.js";
+import { titleCase } from "../../utils/titleCase.js";
 import { IDLE_EXPIRY_MS, buildKey, normalizeTurn } from "./shared.js";
 import { estimateTokens } from "./tokens.js";
 

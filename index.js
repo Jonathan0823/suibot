@@ -1,5 +1,5 @@
 import "dotenv/config";
-import "./server.js";
+import "./src/lib/server.js";
 import fs from "node:fs";
 import path from "node:path";
 import {
@@ -14,7 +14,7 @@ import { loadAlarmId, setupDailyAlarm, triggerAlarm } from "./utils/alarm.js";
 import { getSong, updateSongList } from "./utils/songlist.js";
 import { loadTriggerWords, triggerWords } from "./utils/triggerWord.js";
 import { loadCodeChannels } from "./utils/redeemCodeChannels.js";
-import { bindAlertClient } from "./utils/ai/discordAlert.js";
+import { bindAlertClient } from "./src/modules/ai/discordAlert.js";
 import { setupCodeScraperCron } from "./utils/autoCodeBroadcast.js";
 import { fileURLToPath, pathToFileURL } from "node:url";
 const client = new Client({
@@ -61,10 +61,10 @@ const commandFiles = fs.readdirSync(commandsPath).filter(isRuntimeModule);
 
 const slashCommands = [];
 const slashCommandMap = new Map();
-const slashPath = path.join(__dirname, "slash");
+const slashPath = path.join(__dirname, "src/discord/slash");
 const slashFiles = fs.readdirSync(slashPath).filter(isRuntimeModule);
 
-const eventsPath = path.join(__dirname, "events");
+const eventsPath = path.join(__dirname, "src/discord/events");
 const eventFiles = fs.readdirSync(eventsPath).filter(isRuntimeModule);
 
 for (const file of commandFiles) {

@@ -5,8 +5,8 @@ import {
   ActionRowBuilder,
 } from "discord.js";
 import cron from "node-cron";
-import getRandomColor from "../helper/randomColor.js";
-import prisma from "../lib/prisma.js";
+import getRandomColor from "../src/utils/randomColor.js";
+import prisma from "../src/lib/prisma.js";
 
 let channelId = [];
 let scheduledJobs = {};

@@ -1,4 +1,4 @@
-import prisma from "../lib/prisma.js";
+import prisma from "../src/lib/prisma.js";
 
 // In-memory trigger cache
 let triggers = [];

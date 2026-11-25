@@ -1,4 +1,4 @@
-import prisma from "../lib/prisma.js";
+import prisma from "../src/lib/prisma.js";
 import * as cheerio from "cheerio";
 
 // API endpoints for HoYoverse games

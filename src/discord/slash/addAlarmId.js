@@ -1,6 +1,6 @@
 import { SlashCommandBuilder, MessageFlagsBitField } from "discord.js";
-import prisma from "../lib/prisma.js";
-import { loadAlarmId, setupDailyAlarm } from "../utils/alarm.js";
+import prisma from "../../lib/prisma.js";
+import { loadAlarmId, setupDailyAlarm } from "../../../utils/alarm.js";
 
 export default {
   data: new SlashCommandBuilder()

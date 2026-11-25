@@ -1,6 +1,6 @@
 import cron from "node-cron";
-import { getCodeChannels } from "../utils/redeemCodeChannels.js";
-import { getAllNewCodes, saveCodes } from "../utils/codeScraper.js";
+import { getCodeChannels } from "./redeemCodeChannels.js";
+import { getAllNewCodes, saveCodes } from "./codeScraper.js";
 import { createRedeemEmbed } from "../helper/redeemEmbed.js";
 
 let isCheckingCodes = false;

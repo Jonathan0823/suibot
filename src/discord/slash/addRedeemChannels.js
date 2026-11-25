@@ -1,5 +1,5 @@
 import { SlashCommandBuilder } from "discord.js";
-import { addCodeChannel } from "../utils/redeemCodeChannels.js";
+import { addCodeChannel } from "../../../utils/redeemCodeChannels.js";
 
 export default {
   data: new SlashCommandBuilder()

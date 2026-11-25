@@ -1,7 +1,7 @@
 // Child process for startCacheUpdater: updates one game's Enka game data on disk and exits.
 // It runs apart from the bot because the libraries' unzip code can throw from callbacks and
 // leaves write-stream errors unhandled; a crash here must not take the bot down.
-// Usage: node utils/enka/updateGameData.js <genshin|starrail>
+// Usage: node src/modules/enka/updateGameData.js <genshin|starrail>
 import { EnkaClient } from "enka-network-api";
 import { StarRail } from "starrail.js";
 

@@ -1,16 +1,16 @@
 import "dotenv/config";
 import getUserName from "../helper/getUserName.js";
-import splitMessage from "../helper/splitMessage.js";
-import { createRequestId, logAiEvent } from "./ai/observability.js";
-import { sendOperationsAlert } from "./ai/discordAlert.js";
-import { createAiProviderService } from "./ai/providers.js";
-import { createToolLoop } from "./ai/toolLoop.js";
-import { createTools } from "./ai/tools.js";
+import splitMessage from "../src/utils/splitMessage.js";
+import { createRequestId, logAiEvent } from "../src/modules/ai/observability.js";
+import { sendOperationsAlert } from "../src/modules/ai/discordAlert.js";
+import { createAiProviderService } from "../src/modules/ai/providers.js";
+import { createToolLoop } from "../src/modules/ai/toolLoop.js";
+import { createTools } from "../src/modules/ai/tools.js";
 import { ensureScrapedCodeCache, getCachedCodesForGame } from "./codeScraper.js";
-import { getEnkaService } from "./enka/enkaClient.js";
-import { createConversation } from "./conversation/conversation.js";
-import { createPostgresStore } from "./conversation/postgresStore.js";
-import prisma from "../lib/prisma.js";
+import { getEnkaService } from "../src/modules/enka/enkaClient.js";
+import { createConversation } from "../src/modules/conversation/conversation.js";
+import { createPostgresStore } from "../src/modules/conversation/postgresStore.js";
+import prisma from "../src/lib/prisma.js";
 
 const providerService = createAiProviderService({
   logEvent: logAiEvent,

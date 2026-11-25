@@ -1,8 +1,8 @@
 import "dotenv/config";
 import { describe, it, beforeAll, afterAll, expect } from "vitest";
 import { Client, GatewayIntentBits } from "discord.js";
-import { fetchHoyoCodes, fetchWuwaCodes, fetchEndfieldCodes } from "../utils/codeScraper.js";
-import { createRedeemEmbed } from "../helper/redeemEmbed.js";
+import { fetchHoyoCodes, fetchWuwaCodes, fetchEndfieldCodes } from "../../../utils/codeScraper.js";
+import { createRedeemEmbed } from "../../../helper/redeemEmbed.js";
 
 const TEST_CHANNEL_ID = "1447126677179338864";
 

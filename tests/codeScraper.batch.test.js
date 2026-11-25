@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("../lib/prisma.js", () => ({
+vi.mock("../src/lib/prisma.js", () => ({
   default: {
     scrapedCode: {
       findMany: vi.fn(),
@@ -15,7 +15,7 @@ vi.mock("../utils/codeScraper.js", async () => {
   return actual;
 });
 
-import prisma from "../lib/prisma.js";
+import prisma from "../src/lib/prisma.js";
 import { addCodeToCache, ensureScrapedCodeCache, filterNewCodes, getCachedCodesForGame, markCodesExpired, revalidateCacheMisses, saveCodes } from "../utils/codeScraper.js";
 
 describe("codeScraper batching", () => {

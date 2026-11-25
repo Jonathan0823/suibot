@@ -3,7 +3,7 @@ import {
   MessageFlagsBitField,
   SlashCommandBuilder,
 } from "discord.js";
-import getRandomColor from "../helper/randomColor.js";
+import getRandomColor from "../../utils/randomColor.js";
 
 export default {
   data: new SlashCommandBuilder()

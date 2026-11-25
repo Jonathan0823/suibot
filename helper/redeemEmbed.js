@@ -1,5 +1,5 @@
 import { EmbedBuilder } from "discord.js";
-import getRandomColor from "./randomColor.js";
+import getRandomColor from "../src/utils/randomColor.js";
 
 // Game configuration
 export const GAME_CONFIG = {

@@ -3,7 +3,7 @@ import {
   MessageFlagsBitField,
   AttachmentBuilder,
 } from "discord.js";
-import downloadFile from "../helper/downloadFile.js";
+import downloadFile from "../../lib/downloadFile.js";
 
 export default {
   data: new SlashCommandBuilder()

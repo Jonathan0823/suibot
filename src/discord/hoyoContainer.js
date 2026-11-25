@@ -1,6 +1,6 @@
 import { MessageFlagsBitField, EmbedBuilder } from "discord.js";
-import getRandomColor from "../../helper/randomColor.js";
-import { getEnkaService } from "./enkaClient.js";
+import getRandomColor from "../utils/randomColor.js";
+import { getEnkaService } from "../modules/enka/enkaClient.js";
 
 function profileLines(type, profile) {
   const { player, uid } = profile;
