@@ -64,14 +64,14 @@ const applyCooldown = (cooldownCache, trigger, userId) => {
     return true; // Still on cooldown
   }
 
-  // Set cooldown with expiry timestamp
-  cooldownCache.set(cooldownKey, Date.now() + expiry);
+  // Set cooldown start timestamp
+  cooldownCache.set(cooldownKey, Date.now());
 
   // Cleanup old entries periodically
   if (cooldownCache.size > 1000) {
     const now = Date.now();
     for (const [k, v] of cooldownCache.entries()) {
-      if (v < now) cooldownCache.delete(k);
+      if (now - v >= expiry) cooldownCache.delete(k);
     }
   }
 

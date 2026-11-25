@@ -252,6 +252,54 @@ describe("Trigger Word System", () => {
       expect(second).toBeNull();
     });
 
+    it("should allow the trigger again once the cooldown has elapsed", async () => {
+      const mockTriggers = [
+        {
+          key: "test",
+          response: "Hi!",
+          matchMode: "exact",
+          enabled: true,
+          priority: 0,
+          aliases: [],
+          cooldownSeconds: 5,
+          id: "trigger2",
+        },
+      ];
+      prisma.triggerWord.findMany.mockResolvedValue(mockTriggers);
+      await loadTriggerWords();
+
+      const user3 = createMockInteraction("test", "user3");
+      expect(await triggerWords(user3)).toBe(true);
+
+      vi.advanceTimersByTime(5000);
+      expect(await triggerWords(user3)).toBe(true);
+    });
+
+    it("keeps active cooldowns when the cache is pruned", async () => {
+      prisma.triggerWord.findMany.mockResolvedValue([
+        {
+          key: "test",
+          response: "Hi!",
+          matchMode: "exact",
+          enabled: true,
+          priority: 0,
+          aliases: [],
+          cooldownSeconds: 5,
+          id: "trigger-prune",
+        },
+      ]);
+      await loadTriggerWords();
+
+      expect(await triggerWords(createMockInteraction("test", "cooling-user"))).toBe(true);
+
+      vi.advanceTimersByTime(1000);
+      for (let i = 0; i < 1001; i++) {
+        await triggerWords(createMockInteraction("test", `other-${i}`));
+      }
+
+      expect(await triggerWords(createMockInteraction("test", "cooling-user"))).toBeNull();
+    });
+
     it("should allow different users to trigger independently", async () => {
       const mockTriggers = [
         {
